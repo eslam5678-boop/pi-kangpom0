@@ -1,0 +1,584 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { PlacedItem, Worker, SoilState, GrowthStage } from '../../app/types';
+import { GAME_ASSETS } from '../../lib/gameData';
+import { ONBOARDING_STEPS, INITIAL_WORKERS } from './onboardingData';
+import { plowSoil, waterSoil, plantSeed, harvestCrop, calculateGrowthStage } from '../../lib/farmingEngine';
+import { useProductionTimer, Building } from '../../lib/useProductionTimer';
+
+interface FarmGridProps {
+  items?: PlacedItem[];
+  inventory?: { [key: string]: number };
+  piBalance?: number;
+  onSelectItem: (item: PlacedItem) => void;
+  onPlaceTileClick: (x: number, y: number) => void;
+  onUpdateItem?: (updatedItem: PlacedItem) => void;
+  onPiTransaction?: (amount: number, description: string) => void;
+  onUpdateInventory?: (itemKey: string, delta: number) => void;
+}
+
+interface FloatingText {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+}
+
+export default function FarmGrid({ 
+  items = [], 
+  inventory = {}, 
+  piBalance = 100, 
+  onSelectItem, 
+  onPlaceTileClick, 
+  onUpdateItem,
+  onPiTransaction,
+  onUpdateInventory 
+}: FarmGridProps) {
+  const gridSize = 8; 
+  const [onboardingStep, setOnboardingStep] = useState<number | null>(0);
+  const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
+  const [selectedSoil, setSelectedSoil] = useState<PlacedItem | null>(null);
+  const [selectedAnimal, setSelectedAnimal] = useState<PlacedItem | null>(null);
+  const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
+
+  // حالة مبانِي الإنتاج والمصانع المدارة عبر الخطاف المخصص
+  const [productionBuildings, setProductionBuildings] = useState<Building[]>([
+    {
+      id: 'factory_default_1',
+      type: 'factory',
+      currentRecipeId: 'bread_recipe',
+      status: 'producing',
+      progress: 0,
+      timeRemaining: 45,
+      totalProductionTime: 45,
+    }
+  ]);
+
+  // تفعيل خطاف إدارة أوقات الإنتاج والتحديثات اللحظية
+  useProductionTimer(
+    productionBuildings,
+    setProductionBuildings,
+    (buildingId, recipeId) => {
+      triggerFloatingText(2, 2, '✨ اكتمل الإنتاج وتم إرسال المنتجات للحقيبة!', 'text-yellow-300');
+      if (onUpdateInventory) {
+        onUpdateInventory('crop_flour', 1);
+      }
+      if (onPiTransaction) {
+        onPiTransaction(1.0, 'مكافأة إتمام الإنتاج الصناعي');
+      }
+    }
+  );
+
+  const triggerFloatingText = (x: number, y: number, text: string, color = 'text-yellow-400') => {
+    const id = Date.now() + Math.random();
+    setFloatingTexts(prev => [...prev, { id, x, y, text, color }]);
+    setTimeout(() => {
+      setFloatingTexts(prev => prev.filter(item => item.id !== id));
+    }, 1600);
+  };
+
+  useEffect(() => {
+    if (selectedSoil && items) {
+      const currentItem = items.find(i => i.uid === selectedSoil.uid);
+      if (currentItem) setSelectedSoil(currentItem);
+    }
+    if (selectedAnimal && items) {
+      const currentAnimal = items.find(i => i.uid === selectedAnimal.uid);
+      if (currentAnimal) setSelectedAnimal(currentAnimal);
+    }
+  }, [items]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setWorkers((prevWorkers) =>
+        prevWorkers.map((w) => {
+          const dx = w.targetX - w.x;
+          const dy = w.targetY - w.y;
+          
+          if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+            let nextX = Math.floor(Math.random() * (gridSize - 1));
+            let nextY = Math.floor(Math.random() * (gridSize - 1));
+            
+            if (items && items.length > 0) {
+              if (w.id === 'w2') {
+                const randomItem = items[Math.floor(Math.random() * items.length)];
+                nextX = randomItem.x;
+                nextY = randomItem.y;
+              } else if (w.id === 'w3') {
+                const animalItems = items.filter(i => i.type === 'animal');
+                if (animalItems.length > 0) {
+                  const randomAnimal = animalItems[Math.floor(Math.random() * animalItems.length)];
+                  nextX = randomAnimal.x;
+                  nextY = randomAnimal.y;
+                }
+              }
+            }
+
+            return { ...w, targetX: nextX, targetY: nextY, status: 'walking' };
+          }
+          return { ...w, x: w.x + dx * 0.04, y: w.y + dy * 0.04 };
+        })
+      );
+    }, 400);
+    return () => clearInterval(interval);
+  }, [items]);
+
+  useEffect(() => {
+    if (!items || !onUpdateItem) return;
+    const growTimer = setInterval(() => {
+      items.forEach((item) => {
+        if (item.type === 'soil' && item.soilState === 'planted' && item.plantedAt) {
+          const totalGrowTimeSec = 30; 
+          const currentStage = calculateGrowthStage(item, totalGrowTimeSec);
+          if (currentStage !== item.growthStage) {
+            const updated = { ...item, growthStage: currentStage };
+            onUpdateItem(updated);
+            if (selectedSoil?.uid === item.uid) setSelectedSoil(updated);
+          }
+        }
+      });
+    }, 1000);
+    return () => clearInterval(growTimer);
+  }, [items, onUpdateItem, selectedSoil]);
+
+  const handleFarmingAction = (action: 'plow' | 'water' | 'plant' | 'harvest', seedKey?: string) => {
+    if (!selectedSoil) return;
+    let updatedItem = { ...selectedSoil };
+
+    switch (action) {
+      case 'plow':
+        updatedItem = plowSoil(updatedItem);
+        triggerFloatingText(updatedItem.x, updatedItem.y, '🚜 حرث الأرض!', 'text-amber-400');
+        break;
+      case 'water':
+        updatedItem = waterSoil(updatedItem);
+        triggerFloatingText(updatedItem.x, updatedItem.y, '💧 تم الري!', 'text-blue-400');
+        break;
+      case 'plant':
+        if (seedKey) {
+          const seedCount = inventory[seedKey] || 0;
+          if (seedCount <= 0) {
+            triggerFloatingText(updatedItem.x, updatedItem.y, '❌ لا توجد بذور كافية في الحقيبة!', 'text-red-400');
+            return;
+          }
+          updatedItem = plantSeed(updatedItem, seedKey);
+          if (onUpdateInventory) onUpdateInventory(seedKey, -1);
+          triggerFloatingText(updatedItem.x, updatedItem.y, '🌱 تم البذر!', 'text-green-400');
+        }
+        break;
+      case 'harvest':
+        if (onPiTransaction) {
+          onPiTransaction(2.0, 'حصاد محصول زراعي');
+        }
+        if (onUpdateInventory) {
+          onUpdateInventory('crop_wheat', 1);
+        }
+        updatedItem = harvestCrop(updatedItem);
+        triggerFloatingText(updatedItem.x, updatedItem.y, '-0.5 🪙 Pi (رسوم) | +2.5 🪙 Pi | +1 محصول', 'text-yellow-300');
+        break;
+    }
+
+    if (onUpdateItem) onUpdateItem(updatedItem);
+    onSelectItem(updatedItem);
+    setSelectedSoil(updatedItem.soilState === 'raw' ? null : updatedItem);
+  };
+
+  const handleAnimalAction = (action: 'feed' | 'collect') => {
+    if (!selectedAnimal) return;
+    let updatedAnimal = { ...selectedAnimal };
+
+    if (action === 'feed') {
+      const feedCount = inventory['feed'] || 0;
+      if (feedCount <= 0) {
+        triggerFloatingText(updatedAnimal.x, updatedAnimal.y, '❌ لا يوجد علف كافٍ في الحقيبة!', 'text-red-400');
+        return;
+      }
+      if (onUpdateInventory) onUpdateInventory('feed', -1);
+      updatedAnimal.health = Math.min(100, (updatedAnimal.health || 50) + 25);
+      triggerFloatingText(updatedAnimal.x, updatedAnimal.y, '🌾 تم الإطعام بنجاح!', 'text-green-400');
+    } else if (action === 'collect') {
+      if (onPiTransaction) onPiTransaction(1.5, 'بيع منتج حيواني');
+      if (onUpdateInventory) onUpdateInventory('animal_produce', 1);
+      updatedAnimal.health = Math.max(10, (updatedAnimal.health || 50) - 10);
+      triggerFloatingText(updatedAnimal.x, updatedAnimal.y, '+1.5 🪙 Pi | +1 منتج طازج!', 'text-yellow-300');
+    }
+
+    if (onUpdateItem) onUpdateItem(updatedAnimal);
+    onSelectItem(updatedAnimal);
+  };
+
+  const getIsometricStyle = (x: number, y: number, isAsset = false) => {
+    const tileWidth = 110;
+    const tileHeight = 55;
+    const originX = 420;
+    const originY = 140;
+
+    const isoX = originX + (x - y) * (tileWidth / 2);
+    const isoY = originY + (x + y) * (tileHeight / 2);
+    const zIndex = Math.floor(x + y + (isAsset ? 15 : 0));
+
+    return {
+      left: `${isoX}px`,
+      top: `${isoY}px`,
+      zIndex: zIndex,
+      transition: isAsset ? 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' : 'left 0.4s linear, top 0.4s linear'
+    };
+  };
+
+  const getTileImage = (x: number, y: number) => {
+    const sum = x + y;
+    if (sum % 3 === 0) return '/sand_tile_1.png';
+    if (sum % 3 === 1) return '/sand_tile_2.png';
+    return '/sand_tile.png';
+  };
+
+  const getCropStageIcon = (stage?: GrowthStage) => {
+    switch (stage) {
+      case 0: return '🌱'; 
+      case 1: return '🌿'; 
+      case 2: return '🌾'; 
+      case 3: return '🌾✨'; 
+      default: return '';
+    }
+  };
+
+  const getGrowthProgress = (item: PlacedItem) => {
+    if (!item.plantedAt) return { progress: 0, remaining: 30 };
+    const elapsed = (Date.now() - item.plantedAt) / 1000;
+    const total = 30; 
+    const progress = Math.min(Math.floor((elapsed / total) * 100), 100);
+    const remaining = Math.max(Math.ceil(total - elapsed), 0);
+    return { progress, remaining };
+  };
+
+  return (
+    <div className="relative w-full h-[720px] bg-[#1a0f07] overflow-hidden rounded-3xl border-4 border-[#d4af37] shadow-2xl p-4 select-none">
+      
+      {/* العنوان العلوي */}
+      <div className="absolute top-4 left-8 right-8 flex justify-between items-center z-0 pointer-events-none opacity-80">
+        <img src="/decoration_torch.png" alt="torch" className="w-8 h-12 animate-pulse object-contain" />
+        <span className="text-[#d4af37] font-black text-xl tracking-widest drop-shadow-lg">إمبراطورية باي الفرعونية - PI KINGDOM FARM</span>
+        <img src="/decoration_torch.png" alt="torch" className="w-8 h-12 animate-pulse object-contain" />
+      </div>
+
+      {/* شريط الإحصائيات والحقيبة المختصر */}
+      <div className="absolute top-16 left-8 z-30 bg-[#2a1810]/90 border border-[#d4af37]/60 px-4 py-1.5 rounded-full shadow-lg flex items-center gap-4 text-xs font-bold text-[#f9e8a2]">
+        <span>👷 العمال: {workers.length}</span>
+        <span>•</span>
+        <span>🌾 المحاصيل: {items.filter(i => i.soilState === 'planted').length}</span>
+        <span>•</span>
+        <span>🎒 بذور القمح: {inventory['seed_wheat'] || 0}</span>
+      </div>
+
+      {/* عرض مؤشر مباني الإنتاج النشطة في الزاوية */}
+      <div className="absolute top-28 left-8 z-30 bg-[#2a1810]/90 border border-[#d4af37]/60 px-4 py-2 rounded-xl shadow-lg flex flex-col gap-1 text-xs text-[#f9e8a2]">
+        <span className="font-bold text-[#d4af37]">⚙️ حالة المصانع:</span>
+        {productionBuildings.map((b) => (
+          <div key={b.id} className="flex flex-col gap-1">
+            <div className="flex justify-between gap-4">
+              <span>{b.type === 'factory' ? '🏭 مصنع الخبز' : '🛖 حظيرة'}</span>
+              <span className="text-yellow-400">{b.status === 'producing' ? `${Math.round(b.progress)}%` : 'جاهز!'}</span>
+            </div>
+            <div className="w-28 bg-black/70 rounded-full h-1.5 border border-amber-600 overflow-hidden">
+              <div className="bg-yellow-500 h-full transition-all duration-300" style={{ width: `${b.progress}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* شريط أدوات الزراعة العائم */}
+      {selectedSoil && (
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-40 bg-[#2a1810]/95 border-2 border-[#d4af37] px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-bounce">
+          <span className="text-[#f9e8a2] font-extrabold text-sm border-l border-amber-600/50 pl-3">
+            القطعة ({selectedSoil.x}, {selectedSoil.y})
+          </span>
+
+          {(!selectedSoil.soilState || selectedSoil.soilState === 'raw') && (
+            <button
+              onClick={() => handleFarmingAction('plow')}
+              className="bg-amber-700 hover:bg-amber-600 text-white font-bold px-4 py-1.5 rounded-full flex items-center gap-2 shadow cursor-pointer transition transform hover:scale-105"
+            >
+              <span>🚜</span> حرث الأرض
+            </button>
+          )}
+
+          {selectedSoil.soilState === 'plowed' && (
+            <button
+              onClick={() => handleFarmingAction('water')}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-1.5 rounded-full flex items-center gap-2 shadow cursor-pointer transition transform hover:scale-105 animate-pulse"
+            >
+              <span>💧</span> رش المياه
+            </button>
+          )}
+
+          {selectedSoil.soilState === 'watered' && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleFarmingAction('plant', 'seed_wheat')}
+                className="bg-green-700 hover:bg-green-600 text-white text-xs font-extrabold px-3 py-1.5 rounded-full flex items-center gap-1 shadow cursor-pointer transition transform hover:scale-105"
+              >
+                <span>🌾</span> قمح ({inventory['seed_wheat'] || 0})
+              </button>
+              <button
+                onClick={() => handleFarmingAction('plant', 'seed_barley')}
+                className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-extrabold px-3 py-1.5 rounded-full flex items-center gap-1 shadow cursor-pointer transition transform hover:scale-105"
+              >
+                <span>🌿</span> شعير ({inventory['seed_barley'] || 0})
+              </button>
+              <button
+                onClick={() => handleFarmingAction('plant', 'seed_lotus')}
+                className="bg-teal-700 hover:bg-teal-600 text-white text-xs font-extrabold px-3 py-1.5 rounded-full flex items-center gap-1 shadow cursor-pointer transition transform hover:scale-105"
+              >
+                <span>🌸</span> لوتس ({inventory['seed_lotus'] || 0})
+              </button>
+            </div>
+          )}
+
+          {selectedSoil.soilState === 'planted' && (selectedSoil.growthStage ?? 0) < 3 && (
+            <div className="text-yellow-400 font-extrabold text-sm flex items-center gap-2 bg-black/60 px-4 py-1.5 rounded-full">
+              <span>⏳</span> النمو: ({selectedSoil.growthStage ?? 0}/3)
+            </div>
+          )}
+
+          {selectedSoil.soilState === 'planted' && selectedSoil.growthStage === 3 && (
+            <button
+              onClick={() => handleFarmingAction('harvest')}
+              className="bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black font-black px-6 py-1.5 rounded-full flex items-center gap-2 shadow-lg cursor-pointer transition transform hover:scale-110 animate-pulse"
+            >
+              <span>🌾✨</span> حصاد (-0.5 Pi / +2.5 Pi)
+            </button>
+          )}
+
+          <button
+            onClick={() => setSelectedSoil(null)}
+            className="text-red-400 hover:text-red-300 font-bold ml-1 text-lg cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* شريط تفاعل الحيوانات العائم */}
+      {selectedAnimal && (
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-40 bg-[#2a1810]/95 border-2 border-[#d4af37] px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-bounce">
+          <span className="text-[#f9e8a2] font-extrabold text-sm border-l border-amber-600/50 pl-3">
+            🐾 حيوان
+          </span>
+          <button
+            onClick={() => handleAnimalAction('feed')}
+            className="bg-green-700 hover:bg-green-600 text-white font-bold px-4 py-1.5 rounded-full flex items-center gap-2 shadow cursor-pointer transition transform hover:scale-105"
+          >
+            <span>🌾</span> إطعام (علف: {inventory['feed'] || 0})
+          </button>
+          <button
+            onClick={() => handleAnimalAction('collect')}
+            className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-1.5 rounded-full flex items-center gap-2 shadow cursor-pointer transition transform hover:scale-105"
+          >
+            <span>🥛</span> جمع الإنتاج
+          </button>
+          <button
+            onClick={() => setSelectedAnimal(null)}
+            className="text-red-400 hover:text-red-300 font-bold ml-1 text-lg cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* رسم الشبكة والأصول */}
+      <div className="relative w-full h-full">
+        {Array.from({ length: gridSize }).map((_, x) =>
+          Array.from({ length: gridSize }).map((_, y) => {
+            const style = getIsometricStyle(x, y);
+            const tileImg = getTileImage(x, y);
+            return (
+              <div
+                key={`tile-${x}-${y}`}
+                onClick={() => {
+                  setSelectedSoil(null);
+                  setSelectedAnimal(null);
+                  onPlaceTileClick(x, y);
+                }}
+                style={style}
+                className="absolute w-[110px] h-[55px] cursor-pointer group hover:brightness-125 transition-all duration-150"
+              >
+                <img
+                  src={tileImg}
+                  alt="ground"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = '/sand_tile.png';
+                  }}
+                  className="w-full h-full object-cover block drop-shadow-sm pointer-events-none"
+                />
+                <div className="absolute inset-0 border-[0.5px] border-amber-900/30 group-hover:border-[#d4af37] transition-colors pointer-events-none" />
+              </div>
+            );
+          })
+        )}
+
+        {items && items.map((item) => {
+          const asset = GAME_ASSETS[item.assetId];
+          if (!asset) return null;
+          
+          const isLargeBuilding = asset.gridSize && asset.gridSize.width >= 2;
+          const style = getIsometricStyle(item.x, item.y, true);
+          const isSoil = item.type === 'soil';
+          const isAnimal = item.type === 'animal';
+          const growthInfo = isSoil && item.soilState === 'planted' ? getGrowthProgress(item) : null;
+
+          return (
+            <div
+              key={item.uid}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectItem(item);
+                if (isSoil) {
+                  setSelectedSoil(item);
+                  setSelectedAnimal(null);
+                } else if (isAnimal) {
+                  setSelectedAnimal(item);
+                  setSelectedSoil(null);
+                }
+              }}
+              style={style}
+              className={`absolute cursor-pointer transform -translate-x-1/4 -translate-y-3/4 hover:scale-105 transition-transform duration-200 group ${
+                isLargeBuilding ? 'z-20' : 'z-10'
+              }`}
+            >
+              {asset.requiresPedestal && (
+                <img
+                  src="/pedestal.png"
+                  alt="pedestal"
+                  className="absolute -bottom-4 -left-3 w-[140px] h-auto z-0 drop-shadow-lg pointer-events-none"
+                />
+              )}
+
+              <img
+                src={asset.image}
+                alt={asset.name}
+                style={{
+                  filter: isSoil && item.soilState === 'plowed' 
+                    ? 'sepia(0.6) brightness(0.8) drop-shadow(0px 14px 8px rgba(0,0,0,0.55))' 
+                    : isSoil && (item.soilState === 'watered' || item.soilState === 'planted')
+                    ? 'hue-rotate(180deg) brightness(0.9) drop-shadow(0px 14px 8px rgba(0,0,0,0.55))'
+                    : 'drop-shadow(0px 14px 8px rgba(0, 0, 0, 0.55))'
+                }}
+                className={`relative z-10 object-contain pointer-events-none ${
+                  isLargeBuilding 
+                    ? 'w-[190px] sm:w-[230px] max-h-[230px] -ml-8 -mt-12' 
+                    : 'w-[85px] sm:w-[100px] max-h-[100px]'        
+                }`}
+              />
+
+              {isSoil && item.soilState === 'planted' && (
+                <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
+                  <span className="text-2xl drop-shadow-md animate-bounce">
+                    {getCropStageIcon(item.growthStage)}
+                  </span>
+                  {growthInfo && (item.growthStage ?? 0) < 3 && (
+                    <div className="w-16 bg-black/80 rounded-full h-1.5 border border-amber-500 overflow-hidden mt-1 shadow">
+                      <div 
+                        className="bg-gradient-to-r from-amber-500 to-yellow-400 h-full transition-all duration-1000"
+                        style={{ width: `${growthInfo.progress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isAnimal && (
+                <div className="absolute -top-2 left-4 w-14 bg-black/90 rounded-full h-2 border border-[#d4af37] overflow-hidden z-30 flex shadow-md">
+                  <div
+                    className={`h-full ${item.health > 50 ? 'bg-green-500' : 'bg-red-600'} transition-all`}
+                    style={{ width: `${item.health}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {floatingTexts.map((ft) => {
+          const style = getIsometricStyle(ft.x, ft.y, true);
+          return (
+            <div
+              key={ft.id}
+              style={{
+                ...style,
+                transform: 'translate(-50%, -120%)',
+                animation: 'floatUp 1.5s ease-out forwards'
+              }}
+              className={`absolute z-50 font-black text-sm md:text-base drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none whitespace-nowrap ${ft.color}`}
+            >
+              {ft.text}
+            </div>
+          );
+        })}
+
+        {workers.map((worker) => {
+          const style = getIsometricStyle(worker.x, worker.y, true);
+          return (
+            <div
+              key={worker.id}
+              style={style}
+              className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300 z-30"
+            >
+              <img
+                src={worker.image}
+                alt={worker.name}
+                style={{ filter: 'drop-shadow(0px 6px 4px rgba(0, 0, 0, 0.6))' }}
+                className="w-12 h-12 object-contain"
+              />
+              <span className="absolute -bottom-3 left-0 right-0 text-center bg-black/85 text-[#f9e8a2] text-[8px] px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap border border-amber-600/50 shadow">
+                {worker.name} ⚡{worker.stamina}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* نافذة الترحيب */}
+      {onboardingStep !== null && onboardingStep < ONBOARDING_STEPS.length && (
+        <div className="absolute inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-[#2a1810] border-4 border-[#d4af37] rounded-3xl p-6 max-w-lg w-full shadow-2xl relative flex flex-col items-center text-center">
+            <div className="w-24 h-24 rounded-full border-2 border-[#d4af37] overflow-hidden bg-[#1a0f07] -mt-16 mb-4 shadow-lg">
+              <img src="/shaheen.png" alt="عم شاهين" className="w-full h-full object-contain" />
+            </div>
+            
+            <h3 className="text-[#d4af37] font-black text-2xl mb-2 drop-shadow">
+              {ONBOARDING_STEPS[onboardingStep].title}
+            </h3>
+            
+            <p className="text-[#f9e8a2] text-sm md:text-base leading-relaxed mb-6 bg-[#1a0f07]/60 p-4 rounded-xl border border-amber-900/40">
+              {ONBOARDING_STEPS[onboardingStep].text}
+            </p>
+
+            <div className="flex gap-4 w-full justify-center">
+              <button
+                onClick={() => {
+                  if (onboardingStep < ONBOARDING_STEPS.length - 1) {
+                    setOnboardingStep(onboardingStep + 1);
+                  } else {
+                    setOnboardingStep(null);
+                  }
+                }}
+                className="bg-gradient-to-r from-[#d4af37] to-[#aa820a] hover:from-[#e5c158] hover:to-[#c49814] text-[#1a0f07] font-black px-8 py-3 rounded-full shadow-lg transform hover:scale-105 transition-all duration-150 border border-yellow-200 cursor-pointer"
+              >
+                {onboardingStep < ONBOARDING_STEPS.length - 1 ? 'التالي ◄' : 'ابدأ العمل يا باشا! 🚀'}
+              </button>
+              
+              <button
+                onClick={() => setOnboardingStep(null)}
+                className="text-amber-500 hover:text-amber-300 text-xs underline self-center cursor-pointer"
+              >
+                تخطي الشرح
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

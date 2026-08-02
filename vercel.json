@@ -1,0 +1,25 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; media-src *; frame-ancestors 'self' https://*.pi.network https://*.vercel.app http://localhost:3000;"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "ALLOW-FROM https://pi.network"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ]
+    }
+  ]
+}

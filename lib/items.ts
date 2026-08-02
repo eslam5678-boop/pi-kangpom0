@@ -1,0 +1,110 @@
+export const farmItems = {
+  seed_wheat: {
+    id: 'seed_wheat',
+    name: 'بذور القمح الذهبي',
+    category: 'seed',
+    image: '/seed_wheat.png',
+    productName: 'سنابل قمح',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 10,
+    requiredLevel: 1,
+    xpReward: 5,
+    productionTimeSec: 60,
+    outputQuantity: 2
+  },
+  seed_barley: {
+    id: 'seed_barley',
+    name: 'بذور الشعير الفرعوني',
+    category: 'seed',
+    image: '/seed_barley.png',
+    productName: 'حبوب الشعير',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 20,
+    requiredLevel: 2,
+    xpReward: 8,
+    productionTimeSec: 120,
+    outputQuantity: 2
+  },
+  seed_flax: {
+    id: 'seed_flax',
+    name: 'بذور الكتان الملكي',
+    category: 'seed',
+    image: '/seed_flax.png',
+    productName: 'خيوط الكتان الخام',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 35,
+    buyPricePi: 0.1,
+    requiredLevel: 3,
+    xpReward: 12,
+    productionTimeSec: 180,
+    outputQuantity: 3
+  },
+  seed_sesame: {
+    id: 'seed_sesame',
+    name: 'بذور السمسم الوادي',
+    category: 'seed',
+    image: '/seed_sesame.png',
+    productName: 'حبوب سمسم وزيت',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 50,
+    requiredLevel: 4,
+    xpReward: 15,
+    productionTimeSec: 240,
+    outputQuantity: 3
+  },
+  seed_lotus: {
+    id: 'seed_lotus',
+    name: 'بذور زهرة اللوتس المقدسة',
+    category: 'seed',
+    image: '/seed_lotus.png',
+    productName: 'لوتس أسطوري',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 200,
+    buyPricePi: 1.0,
+    requiredLevel: 10,
+    xpReward: 50,
+    productionTimeSec: 900,
+    outputQuantity: 1
+  },
+
+  // أشجار مثمرة
+  fig_tree: {
+    id: 'fig_tree',
+    name: 'شجرة التين المباركة',
+    category: 'tree',
+    image: '/fig_tree.png',
+    productName: 'ثمار التين',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 80,
+    requiredLevel: 4,
+    xpReward: 20,
+    productionTimeSec: 300,
+    outputQuantity: 4
+  },
+  palm_tree: {
+    id: 'palm_tree',
+    name: 'النخلة الملكية السيناوية',
+    category: 'tree',
+    image: '/palm_tree.png',
+    productName: 'بلح وتمور',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 100,
+    requiredLevel: 5,
+    xpReward: 25,
+    productionTimeSec: 420,
+    outputQuantity: 5
+  },
+  pomegranate_tree: {
+    id: 'pomegranate_tree',
+    name: 'شجرة الرمان الملكي',
+    category: 'tree',
+    image: '/pomegranate_tree.png',
+    productName: 'حبات الرمان',
+    gridSize: { width: 1, height: 1 },
+    buyPriceGold: 120,
+    requiredLevel: 6,
+    xpReward: 30,
+    productionTimeSec: 500,
+    outputQuantity: 4
+  }
+};
