@@ -221,11 +221,9 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [restoredPurchases, setRestoredPurchases] = useState<
     UserPurchaseBalance[] | null
-  >(null);
+>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<{ username: string; id: string; roles?: string[] } | null>(null);
-
-  const isDevelopmentMode = process.env.NODE_ENV === "development";
 
   const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
     try {
@@ -239,24 +237,9 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
 
   const initialize = async () => {
     console.log("[PiAuth] Initialize called");
-    setIsLoading(true);
+setIsLoading(true);
     setHasError(false);
     setRestoredPurchases(null);
-    
-    if (isDevelopmentMode) {
-      console.log("[PiAuth] Development mode detected - using mock authentication");
-      setAuthMessage("Development mode - authenticating mock user...");
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setIsAuthenticated(true);
-      setAuthMessage("Development mode - authenticated");
-      setUser({
-        username: "TestUser",
-        id: "dev-user-12345",
-        roles: [],
-      });
-      setIsLoading(false);
-      return;
-    }
     
     try {
       console.log("[PiAuth] Probing for parent credentials");

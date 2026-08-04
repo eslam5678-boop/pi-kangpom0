@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { usePiAuth } from  "@/contexts/auth-context";
 import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
 
 interface PaymentButtonProps {
   onSuccess?: () => void
@@ -48,23 +49,21 @@ export function PaymentButton({ onSuccess, onError }: PaymentButtonProps) {
       setSuccess(false)
 
       try {
-        console.log("[v0] Starting payment for product:", product.id)
-        const result = await sdk.makePurchase(product.id)
+        console.log("[v0] Starting direct Pi payment for product:", product.id, "amount:", product.price_in_pi)
+        const uid = await getPiUid()
+        const result = await payWithPi({
+          amount: product.price_in_pi || 1.0,
+          memo: `شراء اللعبة - ${product.name}`,
+          metadata: { productId: product.id, productName: product.name },
+          uid,
+        })
 
-        if (result.ok) {
-          console.log("[v0] Payment successful:", {
-            productId: result.productId,
-            paymentId: result.paymentId,
-            txid: result.txid,
-          })
+        if (result) {
+          console.log("[v0] Payment successful (direct Pi):", result)
           setSuccess(true)
           onSuccess?.()
           // Reset success message after 3 seconds
           setTimeout(() => setSuccess(false), 3000)
-        } else {
-          const errorMsg = "فشل الدفع"
-          setError(errorMsg)
-          onError?.(errorMsg)
         }
       } catch (err: any) {
         console.error("[v0] Payment error:", err)

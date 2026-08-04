@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { payWithPi, getPiUid } from "@/lib/pi-direct-payment";
 
 interface P2PItem {
   id: string;
@@ -16,12 +17,30 @@ export default function MarketplaceArchitecture() {
     { id: "p1", seller: "Basha_Mina", itemName: "محصول قمح ملكي", quantity: 100, pricePi: 2.5 },
     { id: "p2", seller: "Pharaoh_99", itemName: "حزمة أعلاف فاخرة", quantity: 50, pricePi: 1.8 },
   ]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleBuyP2P = (item: P2PItem) => {
-    const fee = (item.pricePi * 0.02).toFixed(3); // عمولة 2%
-    const sellerNet = (item.pricePi * 0.98).toFixed(3);
-    alert(`[نظام الضمان Escrow]: تم تجميد ${item.pricePi} Pi.\nسيتم تحويل ${sellerNet} Pi للبائع واقتطاع عمولة الخزينة (${fee} Pi) فور استلام العتاد.`);
-    setP2pListings((prev) => prev.filter((i) => i.id !== item.id));
+  const handleBuyP2P = async (item: P2PItem) => {
+    setBusyId(item.id);
+    setError(null);
+    try {
+      const fee = (item.pricePi * 0.02).toFixed(3); // عمولة 2%
+      // فتح محفظة Pi عبر Pi.createPayment لتحويل المبلغ في نظام الضمان (Escrow)
+      const uid = await getPiUid();
+      await payWithPi({
+        amount: item.pricePi,
+        memo: `شراء ${item.itemName} من ${item.seller} (ضمان، عمولة ${fee} Pi)`,
+        metadata: { listingId: item.id, seller: item.seller, action: "p2p_escrow" },
+        uid,
+      });
+      // لا تُحذف القائمة إلا بعد نجاح الدفع فعلياً
+      setP2pListings((prev) => prev.filter((i) => i.id !== item.id));
+    } catch (e) {
+      console.error("[MarketplaceArchitecture] P2P payment failed:", e);
+      setError("تعذّر إتمام الدفع عبر محفظة باي لنظام الضمان. حاول مجدداً.");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -88,14 +107,21 @@ export default function MarketplaceArchitecture() {
                   </span>
                   <button
                     onClick={() => handleBuyP2P(item)}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-sm rounded-lg shadow"
+                    disabled={busyId === item.id}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-sm rounded-lg shadow disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    شراء آمن
+                    {busyId === item.id ? "جارٍ فتح محفظة باي..." : "شراء آمن"}
                   </button>
                 </div>
               </div>
             ))}
           </div>
+
+          {error && (
+            <div className="mt-4 bg-red-950/50 border border-red-500/50 rounded-xl p-3 text-red-300 text-sm font-bold text-center">
+              ⚠️ {error}
+            </div>
+          )}
         </div>
       )}
     </div>

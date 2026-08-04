@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { payWithPi, getPiUid } from "@/lib/pi-direct-payment";
 
 export interface LandTier {
   id: string;
@@ -18,17 +19,48 @@ export default function LandRentalSystem() {
     { id: "land-3", name: "أراضي البشوات الخصبة", category: "المزرعة البشواتية", pricePerWeek: 15, isRented: false },
     { id: "land-4", name: "المحمية الملكية المقدسة", category: "المحمية الملكية", pricePerWeek: 50, isRented: false },
   ]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleRentLand = (id: string, price: number) => {
-    // هنا يتم الربط المباشر مع واجهة محفظة Pi Network
-    alert(`جاري معالجة عقد الإيجار بقيمة ${price} Pi عبر محفظتك...`);
-    setLands((prev) =>
-      prev.map((land) =>
-        land.id === id
-          ? { ...land, isRented: true, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 }
-          : land
-      )
-    );
+  const handleRentLand = async (id: string, price: number) => {
+    if (price === 0) {
+      setLands((prev) =>
+        prev.map((land) =>
+          land.id === id
+            ? { ...land, isRented: true, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 }
+            : land
+        )
+      );
+      return;
+    }
+
+    setBusy(id);
+    setError(null);
+    try {
+      // فتح محفظة Pi عبر Pi.createPayment (المدفوعات الحقيقية عبر /api/auth/pi)
+      const land = lands.find((l) => l.id === id);
+      const uid = await getPiUid();
+      await payWithPi({
+        amount: price,
+        memo: `استئجار أرض - ${land?.name || id}`,
+        metadata: { landId: id, action: "land_lease" },
+        uid,
+      });
+
+      // لا يتم تفعيل العقد إلا بعد نجاح الدفع فعلياً
+      setLands((prev) =>
+        prev.map((land) =>
+          land.id === id
+            ? { ...land, isRented: true, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 }
+            : land
+        )
+      );
+    } catch (e) {
+      console.error("[LandRental] payment failed:", e);
+      setError(`تعذّر إتمام الدفع عبر محفظة باي. حاول مجدداً.`);
+    } finally {
+      setBusy(null);
+    }
   };
 
   return (
@@ -60,22 +92,31 @@ export default function LandRentalSystem() {
             </div>
 
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
-              {land.isRented ? (
+{land.isRented ? (
                 <span className="text-green-400 text-sm font-bold flex items-center gap-1">
                   ✓ خاضعة لحيازتك (عقد فعال)
                 </span>
               ) : (
                 <button
                   onClick={() => handleRentLand(land.id, land.pricePerWeek)}
-                  className="w-full py-2 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-extrabold text-sm rounded-lg shadow transition-all"
+                  disabled={busy === land.id}
+                  className="w-full py-2 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-extrabold text-sm rounded-lg shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  توقيع عقد الإيجار ({land.pricePerWeek} Pi)
+                  {busy === land.id
+                    ? "جارٍ فتح محفظة باي..."
+                    : `توقيع عقد الإيجار (${land.pricePerWeek} Pi)`}
                 </button>
               )}
             </div>
-          </div>
+</div>
         ))}
       </div>
+
+      {error && (
+        <div className="mt-4 bg-red-950/50 border border-red-500/50 rounded-xl p-3 text-red-300 text-sm font-bold text-center">
+          ⚠️ {error}
+        </div>
+      )}
     </div>
   );
 }

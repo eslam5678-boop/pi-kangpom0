@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useFarm } from "@/contexts/farm-context"
 import { assetDef, type OwnedAsset } from "@/lib/farm-types"
 import { usePurchase, useAds } from "@/lib/pi-payment"
+import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
 
 // تعريف الثوابت محلياً لتجنب مشاكل التصدير من ملف الأنواع
 const REVIVE_ADS_REQUIRED = 3
@@ -50,11 +51,17 @@ export function LifelineModal({
     }
   }
 
-  const handlePay = async () => {
+const handlePay = async () => {
     setBusy(true)
     setError("")
     try {
-      await makePurchase(LIFELINE_PRODUCT_ID)
+      const uid = await getPiUid()
+      await payWithPi({
+        amount: REVIVE_PI_COST,
+        memo: `إعادة إحياء ${def.name}`,
+        metadata: { assetUid: asset.uid, action: "revive" },
+        uid,
+      })
       reviveAsset(asset.uid)
       onClose()
     } catch (e) {

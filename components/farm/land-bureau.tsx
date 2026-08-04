@@ -3,6 +3,7 @@
 import { useFarm } from "@/contexts/farm-context"
 import { EXPANDED_LAND_TIERS } from "@/lib/farm-types"
 import { usePurchase } from "@/lib/pi-payment"
+import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
 import { getVisualAnimationClass, getVisualAnimationStyle } from "@/lib/visual-animation"
 import { useState } from "react"
 
@@ -26,15 +27,22 @@ export function LandBureau() {
   const [busy, setBusy] = useState<string | null>(null)
   const now = Date.now()
 
-  const handleLease = async (tierId: string, costPi: number) => {
+const handleLease = async (tierId: string, costPi: number) => {
     if (costPi === 0) {
       leaseLand(tierId)
       return
     }
     setBusy(tierId)
     try {
-      // Pi payment for paid land tiers (uses lifeline/land product as placeholder)
-      await makePurchase("farm_revive")
+      // Direct Pi payment using the actual cost for this land tier
+      const tier = EXPANDED_LAND_TIERS.find((t) => t.id === tierId)
+      const uid = await getPiUid()
+      await payWithPi({
+        amount: costPi,
+        memo: `استئجار أرض - ${tier?.name || tierId}`,
+        metadata: { tierId, action: "land_lease" },
+        uid,
+      })
       leaseLand(tierId)
     } catch (e) {
       // payment cancelled or unavailable — do not lease

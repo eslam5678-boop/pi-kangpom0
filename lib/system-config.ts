@@ -30,5 +30,5 @@ export const PI_NETWORK_CONFIG = {
     ? window.location.origin
     : process.env.NEXT_PUBLIC_CALLBACK_URL || "http://localhost:3000",
   
-  ENABLE_MOCK_MODE: true, // Enable mock mode fallback if Pi SDK fails
+ENABLE_MOCK_MODE: false, // Disable mock mode — always use real Pi Network
 } as const;

@@ -1,21 +1,17 @@
-# TODO - CSP Fix for Next.js on Vercel (Pi Kingdom Farm)
+# Pi Payment Fix — Task List
 
-## Problem
-Strict `script-src` in production CSP blocks Next.js inline runtime scripts and eval → browser console errors like:
-- "Executing inline script violates the following Content Security Policy directive..."
-- "Uncaught Error: Connection closed"
+## Goal
+Remove all mock/fake payment `alert()` popups and ensure every Pi payment goes through the real `Pi.createPayment` flow (with proper server-approval/completion via `/api/auth/pi`), so the Pi Wallet window opens in Pi Browser.
 
 ## Steps
-- [x] Create this TODO.md tracking file
-- [x] Rewrite `middleware.ts`:
-  - Always include `'unsafe-inline'` and `'unsafe-eval'` in `script-src` (dev + production)
-  - Keep `'self'`, `https://*.pi.network`, `https://*.vercel.app`
-  - Expand `connect-src` with `https://sdk.minepi.com`, `https://api.minepi.com`, `https://pi-apps.github.io`, `wss:`
-  - Add `font-src` and `frame-src` for completeness
-- [x] Rewrite `vercel.json`:
-  - Match CSP with `script-src` including `'unsafe-inline'` / `'unsafe-eval'`
-  - Keep Pi Network / Vercel domains
-  - Remove deprecated/conflicting `X-Frame-Options: ALLOW-FROM` (frame-ancestors handles it)
-- [ ] Rebuild with `next build` and deploy to Vercel
-- [ ] Verify: hard-refresh browser, confirm no CSP violations in console
+- [x] 1. Fix `components/LandRentalSystem.tsx` — replace mock `alert()` farm rent with real `payWithPi()` for the 5 Pi (and other tier) land contracts + loading/error states
+- [ ] 2. Fix `components/MarketplaceArchitecture.tsx` — replace mock `alert()` P2P escrow with real `payWithPi()` (REVERTED by user — leave as-is)
+- [x] 3. Fix `app/page.tsx` — replace mock `alert()` in Basha rescue `onRescueWithPi` with real `payWithPi()`
+- [x] 4. Verify `lib/pi-direct-payment.ts` wiring (`Pi.createPayment` + 4 standard callbacks + `/api/auth/pi` approve/complete)
+- [ ] 5. Build + deploy + test a real Test-Pi transaction (requires `PI_API_KEY` on Vercel)
+
+## Done
+- [x] Confirmed `system-config.ts` has `ENABLE_MOCK_MODE: false`
+- [x] Confirmed `app-wrapper.tsx` has `ENABLE_DEV_MODE: false`
+- [x] Confirmed API route `app/api/auth/pi/route.ts` implements `approve`/`complete`
 

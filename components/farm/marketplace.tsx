@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useFarm } from "@/contexts/farm-context"
 import { ASSETS, assetDef } from "@/lib/farm-types"
 import { usePurchase } from "@/lib/pi-payment"
+import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
 import { getVisualAnimationClass, getVisualAnimationStyle } from "@/lib/visual-animation"
 import { ShaheenCaptcha } from "./shaheen-captcha"
 
@@ -38,11 +39,17 @@ export function Marketplace() {
     setPending(null)
   }
 
-  const handleUnlockService = async (service: (typeof premiumServices)[number]) => {
+const handleUnlockService = async (service: (typeof premiumServices)[number]) => {
     if (state.unlockedServices?.includes(service.id)) return
     setUnlockingService(service.id)
     try {
-      await makePurchase("farm_revive")
+      const uid = await getPiUid()
+      await payWithPi({
+        amount: service.pricePi,
+        memo: `فتح خدمة ${service.title}`,
+        metadata: { serviceId: service.id, action: "unlock_service" },
+        uid,
+      })
       unlockService(service.id)
       showToast(`تم فتح ${service.title} بنجاح`)
     } catch (error) {

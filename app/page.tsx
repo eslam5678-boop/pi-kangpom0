@@ -5,6 +5,7 @@ import FarmGrid from '../components/farm/farm_grid';
 import { GAME_ASSETS, LAND_CONTRACTS } from '../lib/gameData';
 import { PlacedItem, PlayerStats, ProductionRecipe } from '@/lib/types';
 import RoyalMarketModal from '../components/farm/royal-market-modal';
+import { payWithPi, getPiUid } from '../lib/pi-direct-payment';
 
 // 1. تصحيح مسارات الاستيراد للمكونات والأدوات بناءً على هيكل المجلدات لديك
 import PharaonicSplashScreen from "../components/PharaonicSplashScreen";
@@ -1438,10 +1439,21 @@ export default function KingdomFarmPage() {
       <BashaRescueModal
         animal={criticalAnimal}
         onClose={() => setCriticalAnimal(null)}
-        onRescueWithPi={(id: string, cost: number) => {
-          alert(`تم دفع ${cost} Pi من محفظتك وإنعاش الحيوان فوراً!`);
-          setCriticalAnimal(null);
-          AudioManagerAndCycle.playHarpSound(600);
+onRescueWithPi={async (id: string, cost: number) => {
+          try {
+            const uid = await getPiUid();
+            await payWithPi({
+              amount: cost,
+              memo: `إنعاش فوري للحيوان (${id})`,
+              metadata: { animalId: id, action: "animal_rescue" },
+              uid,
+            });
+            setCriticalAnimal(null);
+            AudioManagerAndCycle.playHarpSound(600);
+          } catch (e) {
+            console.error("[v0] Basha rescue Pi payment failed:", e);
+            alert("تعذّر إتمام الدفع عبر محفظة باي. حاول مجدداً.");
+          }
         }}
         onRescueWithAd={(id: string) => {
           alert("تمت مشاهدة الإعلان! زادت صحة الحيوان مؤقتاً.");
