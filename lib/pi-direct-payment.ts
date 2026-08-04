@@ -79,14 +79,18 @@ export async function getPiUid(): Promise<string | undefined> {
  * Call the local Next.js API route `/api/auth/pi` for approve/complete.
  */
 async function callApiRoute(payload: Record<string, unknown>): Promise<ApiRouteResult> {
+  console.log("[PiPay] callApiRoute payload:", payload);
   const res = await fetch("/api/auth/pi", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   const json = (await res.json().catch(() => ({}))) as ApiRouteResult;
+  console.log("[PiPay] callApiRoute response:", res.status, json);
   if (!res.ok || json.success === false) {
-    throw new Error(json.error || json.details || `API error ${res.status}`);
+    const err = new Error(json.error || json.details || `API error ${res.status}`);
+    (err as { status?: number }).status = res.status;
+    throw err;
   }
   return json;
 }
@@ -107,7 +111,28 @@ export function payWithPi(data: PiPaymentData): Promise<{ paymentId: string; txi
 
     const pi = (window as unknown as { Pi?: PiSDK }).Pi;
     if (!pi || typeof pi.createPayment !== "function") {
-      reject(new Error("Pi SDK not loaded or createPayment unavailable"));
+      // Detailed diagnostics so the exact cause is visible in console.
+      const isPiBrowser =
+        typeof navigator !== "undefined" &&
+        /pi\s*browser|pibrowser/i.test(navigator.userAgent || "");
+      const sdkScriptLoaded = !!document.querySelector(
+        'script[src*="sdk.minepi.com"], script[src*="pi-sdk.js"]'
+      );
+      const err = new Error(
+        "Pi SDK not loaded or createPayment unavailable" +
+          (isPiBrowser ? " (Pi Browser detected)" : " (not in Pi Browser)") +
+          (sdkScriptLoaded
+            ? " - SDK script element found in DOM"
+            : " - SDK script element NOT found in DOM")
+      );
+      (err as { code?: string }).code = "pi_sdk_unavailable";
+      console.error("[PiPay] SDK unavailable. Check CSP headers block the Pi SDK script.", {
+        piAvailable: !!pi,
+        createPaymentAvailable: typeof pi?.createPayment,
+        isPiBrowser,
+        sdkScriptLoaded,
+      });
+      reject(err);
       return;
     }
 
@@ -153,8 +178,14 @@ export function payWithPi(data: PiPaymentData): Promise<{ paymentId: string; txi
       ...(data.uid ? { uid: data.uid } : {}),
     };
 
-    console.log("[PiPay] Calling Pi.createPayment", paymentData);
-    pi.createPayment(paymentData, callbacks);
+console.log("[PiPay] Calling Pi.createPayment", paymentData);
+    try {
+      pi.createPayment(paymentData, callbacks);
+    } catch (e) {
+      // Some SDK versions throw synchronously on invalid input.
+      console.error("[PiPay] Pi.createPayment threw synchronously:", e);
+      reject(e instanceof Error ? e : new Error("Pi.createPayment threw synchronously"));
+    }
   });
 }
 

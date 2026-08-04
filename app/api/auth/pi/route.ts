@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
 
+// Server-side logging helper (visible in Vercel function logs)
+function logServer(prefix: string, data: Record<string, unknown>) {
+  console.log(`[api/auth/pi] ${prefix}`, JSON.stringify({ time: new Date().toISOString(), ...data }));
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { action } = body;
 
+    logServer("request", { action, hasBody: !!body });
+
     const piApiKey = process.env.PI_API_KEY;
+    logServer("config", {
+      piApiKeyPresent: !!piApiKey,
+      piApiKeyLength: piApiKey ? piApiKey.length : 0,
+    });
 
     switch (action) {
       // -------------------------------------------------------------
@@ -84,6 +95,11 @@ export async function POST(request: Request) {
 
         if (!piResponse.ok) {
           const errorText = await piResponse.text();
+          logServer("approve_error", {
+            paymentId,
+            status: piResponse.status,
+            piApiResponse: errorText.slice(0, 500),
+          });
           return NextResponse.json(
             { error: "Failed to approve payment", details: errorText },
             { status: piResponse.status }
@@ -91,6 +107,7 @@ export async function POST(request: Request) {
         }
 
         const data = await piResponse.json();
+        logServer("approve_success", { paymentId, status: piResponse.status });
         return NextResponse.json({ success: true, data });
       }
 

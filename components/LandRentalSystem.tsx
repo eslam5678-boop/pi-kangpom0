@@ -57,7 +57,19 @@ export default function LandRentalSystem() {
       );
     } catch (e) {
       console.error("[LandRental] payment failed:", e);
-      setError(`تعذّر إتمام الدفع عبر محفظة باي. حاول مجدداً.`);
+      const err = e instanceof Error ? e : new Error(String(e));
+      // Show a more specific message when the Pi SDK itself is unavailable.
+      if ((err as { code?: string }).code === "pi_sdk_unavailable") {
+        setError(
+          "تعذّر إتمام الدفع: لم يتم تحميل محفظة باي (Pi SDK). تأكد من فتح التطبيق داخل متصفح Pi وإعادة تحميل الصفحة."
+        );
+      } else if ((err as { code?: string }).code === "purchase_cancelled") {
+        setError("تم إلغاء الدفع.");
+      } else {
+        setError(
+          `تعذّر إتمام الدفع عبر محفظة باي (${err.message || "خطأ غير معروف"}). حاول مجدداً.`
+        );
+      }
     } finally {
       setBusy(null);
     }
@@ -92,7 +104,7 @@ export default function LandRentalSystem() {
             </div>
 
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
-{land.isRented ? (
+              {land.isRented ? (
                 <span className="text-green-400 text-sm font-bold flex items-center gap-1">
                   ✓ خاضعة لحيازتك (عقد فعال)
                 </span>
@@ -108,7 +120,7 @@ export default function LandRentalSystem() {
                 </button>
               )}
             </div>
-</div>
+          </div>
         ))}
       </div>
 
