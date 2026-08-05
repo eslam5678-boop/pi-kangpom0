@@ -325,69 +325,80 @@ console.log("[PiAuth] Initialize called");
       console.log("[PiAuth] Pi.init() succeeded, current appId:", 
         typeof window !== "undefined" ? (piInstance as any)?.getAppId?.() : "N/A");
 
-      setAuthMessage("Loading SDKLite...");
+setAuthMessage("Loading SDKLite...");
       await loadSDKLite();
 
-setAuthMessage("Initializing SDKLite...");
+      setAuthMessage("Initializing SDKLite...");
       const sdkInstance = await (window as any).SDKLite.init();
-      
-      setAuthMessage("Authenticating with Pi Network...");
-      console.log("[PiAuth] About to call sdkInstance.login() with scopes:", ["username", "payments"]);
-      
-      const success = await sdkInstance.login();
-      
-      console.log("[PiAuth] sdkInstance.login() result:", success);
-      
-      if (!success) {
-        const error = new Error("Pi Network login failed - check App ID and Callback URL in Developer Portal");
-        console.error("[PiAuth] Login failed:", {
-          success,
-          appId: PI_NETWORK_CONFIG.APP_ID,
-          expectedOrigin: window.location.origin,
-          pi_getAppId: (piInstance as any)?.getAppId?.(),
-        });
-        throw error;
+
+      // ============================================================
+      // SINGLE authentication flow.
+      //
+      // The previous code authenticated TWICE:
+      //   1. sdkInstance.login()  → SDKLite internally calls
+      //      Pi.authenticate with ONLY the "username" scope, creating
+      //      a Pi session that Pi.createPayment() later rejects because
+      //      it lacks the "payments" scope.
+      //   2. piInstance.authenticate(["username","payments"]) → a
+      //      wrapped-in-catch "optional fallback" that never re-grants
+      //      the session because one already exists.
+      //
+      // The duplicate sdkInstance.login() has been REMOVED. We now run
+      // exactly ONE authentication via Pi.authenticate() requesting
+      // ["username", "payments"]. Because this authenticates the SAME
+      // window.Pi object that pi-direct-payment.ts uses for
+      // Pi.createPayment(), the payments session is shared and the
+      // "Cannot create a payment without payments scope" error is gone.
+      // ============================================================
+      if (
+        typeof window === "undefined" ||
+        !piInstance ||
+        typeof piInstance.authenticate !== "function"
+      ) {
+        throw new Error("Pi.authenticate is not available");
       }
 
-// Backend session validation with /api/auth/pi as required by Pi App Studio
-      // IMPORTANT: The "payments" scope is required for Pi.createPayment() to work.
-      if (typeof window !== "undefined" && piInstance && typeof piInstance.authenticate === "function") {
-        try {
-          // Clear any server-cached / locally cached Pi auth state so the SDK is
-          // forced to show the permissions prompt again and grant the requested scopes.
-          clearPiAuthState();
+      // Clear any server-cached / locally cached Pi auth state so the SDK
+      // is forced to show the permissions prompt again and grant the scopes.
+      clearPiAuthState();
 
-          // Strictly request the scopes required for payments. The Pi SDK v2 expects
-          // authenticate(scopes, onIncompletePaymentFound). To force the permissions
-          // prompt (rather than silently reusing a cached session), we attach the SDK
-          // config parameters (scopes/appId/sandbox/version) as properties on the
-          // incomplete-payment callback — a pattern the SDK uses to pick up config
-          // while still invoking the callback for incomplete payments.
-          const piScopes: string[] = ["username", "payments"];
-          const onIncompletePayment: ((payment: any) => void) & {
-            scopes?: string[];
-            appId?: string;
-            sandbox?: boolean;
-            version?: string;
-          } = (payment: any) => {
-            console.log("Incomplete payment found:", payment);
-          };
-          onIncompletePayment.scopes = piScopes;
-          onIncompletePayment.appId = PI_NETWORK_CONFIG.APP_ID;
-          onIncompletePayment.sandbox = PI_NETWORK_CONFIG.SANDBOX;
-          onIncompletePayment.version = "2.0";
+      setAuthMessage("Authenticating with Pi Network...");
 
-          const authResult = await piInstance.authenticate(piScopes, onIncompletePayment);
-          if (authResult?.accessToken) {
-            await fetch("/api/auth/pi", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ accessToken: authResult.accessToken }),
-            });
-          }
-        } catch (backendError) {
-          console.warn("[PiAuth] Backend token verification step optional fallback:", backendError);
-        }
+      // Strictly request the scopes required for payments. The Pi SDK v2 expects
+      // authenticate(scopes, onIncompletePaymentFound). To force the permissions
+      // prompt (rather than silently reusing a cached session), we attach the SDK
+      // config parameters (scopes/appId/sandbox/version) as properties on the
+      // incomplete-payment callback — a pattern the SDK uses to pick up config
+      // while still invoking the callback for incomplete payments.
+      const piScopes: string[] = ["username", "payments"];
+      const onIncompletePayment: ((payment: any) => void) & {
+        scopes?: string[];
+        appId?: string;
+        sandbox?: boolean;
+        version?: string;
+      } = (payment: any) => {
+        console.log("Incomplete payment found:", payment);
+      };
+      onIncompletePayment.scopes = piScopes;
+      onIncompletePayment.appId = PI_NETWORK_CONFIG.APP_ID;
+      onIncompletePayment.sandbox = PI_NETWORK_CONFIG.SANDBOX;
+      onIncompletePayment.version = "2.0";
+
+      const authResult = await piInstance.authenticate(piScopes, onIncompletePayment);
+      if (!authResult?.accessToken) {
+        throw new Error("Pi Network authentication failed - no access token returned");
+      }
+      console.log("[PiAuth] Pi.authenticate() succeeded with scopes:", piScopes);
+
+      // Backend session validation with /api/auth/pi as required by Pi App Studio.
+      try {
+        await fetch("/api/auth/pi", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "auth", accessToken: authResult.accessToken }),
+        });
+      } catch (backendError) {
+        console.warn("[PiAuth] Backend token verification failed:", backendError);
       }
 
       setSdk(sdkInstance);
