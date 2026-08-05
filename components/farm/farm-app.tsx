@@ -32,7 +32,7 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
 
 function Shell() {
   const { state, feedAll, collectAll, completeOnboarding, setLanguage, getAverageHealth, factoryReset } = useFarm()
-  const { products, sdk, user, isLoading } = usePiAuth()
+const { products, sdk, user, isLoading, logout } = usePiAuth()
   const isDaytime = useTimeTheme()
   const [tab, setTab] = useState<Tab>("game")
   const [selected, setSelected] = useState<OwnedAsset | null>(null)
@@ -208,11 +208,18 @@ function Shell() {
                 </div>
               )}
 
-              <button
+<button
                 onClick={() => setShowSettings(false)}
                 className="w-full text-xs py-1.5 px-2 rounded bg-primary/20 text-primary hover:bg-primary/30 transition-all font-bold"
               >
                 إغلاق
+              </button>
+
+              <button
+                onClick={() => logout()}
+                className="w-full text-xs py-2 px-3 rounded bg-destructive text-white hover:bg-destructive/80 border border-destructive transition-all font-bold flex items-center justify-center gap-1"
+              >
+                🚪 تسجيل الخروج
               </button>
             </div>
           )}

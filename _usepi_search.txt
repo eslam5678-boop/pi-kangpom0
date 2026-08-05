@@ -1,0 +1,53 @@
+
+Path                                                  LineNumber Line                                                                                         
+----                                                  ---------- ----                                                                                         
+E:\pi-kangpom-main\components\farm\farm-app.tsx                5 import { usePiAuth } from "@/contexts/auth-context"                                          
+E:\pi-kangpom-main\components\farm\farm-app.tsx               35   const { products, sdk, user, isLoading } = usePiAuth()                                     
+E:\pi-kangpom-main\components\farm\payment-button.tsx          4 import { usePiAuth } from  "@/contexts/auth-context";                                        
+E:\pi-kangpom-main\components\farm\payment-button.tsx         14   const { sdk, products, restoredPurchases } = usePiAuth()                                   
+E:\pi-kangpom-main\components\app-wrapper.tsx                  4 import { PiAuthProvider, usePiAuth } from "@/contexts/auth-context";                         
+E:\pi-kangpom-main\components\app-wrapper.tsx                 11   const { isLoading  } = usePiAuth();                                                        
+E:\pi-kangpom-main\components\app-wrapper.tsx                 32     <PiAuthProvider>                                                                         
+E:\pi-kangpom-main\components\app-wrapper.tsx                 34     </PiAuthProvider>                                                                        
+E:\pi-kangpom-main\components\auth-loading-screen.tsx          3 import { usePiAuth } from "@/contexts/auth-context";                                         
+E:\pi-kangpom-main\components\auth-loading-screen.tsx          6   const { authMessage, hasError, reinitialize, isLoading } = usePiAuth();                    
+E:\pi-kangpom-main\contexts\auth-context.tsx                  66 function clearPiAuthState(): void {                                                          
+E:\pi-kangpom-main\contexts\auth-context.tsx                  90       console.log("[PiAuth] Cleared Pi-related localStorage keys:", keysToRemove);           
+E:\pi-kangpom-main\contexts\auth-context.tsx                  92       console.log("[PiAuth] No Pi-related localStorage keys to clear");                      
+E:\pi-kangpom-main\contexts\auth-context.tsx                  95     console.error("[PiAuth] Failed to clear Pi auth state:", e);                             
+E:\pi-kangpom-main\contexts\auth-context.tsx                 178 interface PiAuthContextType {                                                                
+E:\pi-kangpom-main\contexts\auth-context.tsx                 191 const PiAuthContext = createContext<PiAuthContextType | undefined>(undefined);               
+E:\pi-kangpom-main\contexts\auth-context.tsx                 259 export function PiAuthProvider({ children }: { children: ReactNode }) {                      
+E:\pi-kangpom-main\contexts\auth-context.tsx                 282 console.log("[PiAuth] Initialize called");                                                   
+E:\pi-kangpom-main\contexts\auth-context.tsx                 288       console.log("[PiAuth] Probing for parent credentials");                                
+E:\pi-kangpom-main\contexts\auth-context.tsx                 291         console.log("[PiAuth] Parent credentials found");                                    
+E:\pi-kangpom-main\contexts\auth-context.tsx                 301       console.log("[PiAuth] No parent credentials, attempting Pi SDK");                      
+E:\pi-kangpom-main\contexts\auth-context.tsx                 308       console.log("[PiAuth] Pi.init() config:", {                                            
+E:\pi-kangpom-main\contexts\auth-context.tsx                 325       console.log("[PiAuth] Pi.init() succeeded, current appId:",                            
+E:\pi-kangpom-main\contexts\auth-context.tsx                 363       clearPiAuthState();                                                                    
+E:\pi-kangpom-main\contexts\auth-context.tsx                 391       console.log("[PiAuth] Pi.authenticate() succeeded with scopes:", piScopes);            
+E:\pi-kangpom-main\contexts\auth-context.tsx                 401         console.warn("[PiAuth] Backend token verification failed:", backendError);           
+E:\pi-kangpom-main\contexts\auth-context.tsx                 407       console.log("[PiAuth] Authentication successful:", {                                   
+E:\pi-kangpom-main\contexts\auth-context.tsx                 425         console.error("[PiAuth] Failed to get user info:", userInfoError);                   
+E:\pi-kangpom-main\contexts\auth-context.tsx                 437         console.log("[PiAuth] Purchases restored", purchases);                               
+E:\pi-kangpom-main\contexts\auth-context.tsx                 439         console.error("[PiAuth] Failed to restore purchases:", e);                           
+E:\pi-kangpom-main\contexts\auth-context.tsx                 444       console.error("[PiAuth] SDKLite initialization failed:", err);                         
+E:\pi-kangpom-main\contexts\auth-context.tsx                 459       console.error("[PiAuth] Full Error Debug Info:", errorDetails);                        
+E:\pi-kangpom-main\contexts\auth-context.tsx                 462         console.warn("[PiAuth] Enabling Mock Mode - game will run with demo data");          
+E:\pi-kangpom-main\contexts\auth-context.tsx                 485     console.log("[PiAuth] Provider mounted - initializing in background");                   
+E:\pi-kangpom-main\contexts\auth-context.tsx                 490       console.log("[PiAuth] Auth initialization timeout (30s) - continuing with guest mode");
+E:\pi-kangpom-main\contexts\auth-context.tsx                 496       console.log("[PiAuth] Auth initialization completed");                                 
+E:\pi-kangpom-main\contexts\auth-context.tsx                 500   const value: PiAuthContextType = {                                                         
+E:\pi-kangpom-main\contexts\auth-context.tsx                 517     <PiAuthContext.Provider value={value}>{children}</PiAuthContext.Provider>                
+E:\pi-kangpom-main\contexts\auth-context.tsx                 521 export function usePiAuth() {                                                                
+E:\pi-kangpom-main\contexts\auth-context.tsx                 522   const context = useContext(PiAuthContext);                                                 
+E:\pi-kangpom-main\contexts\auth-context.tsx                 524     throw new Error("usePiAuth must be used within a PiAuthProvider");                       
+E:\pi-kangpom-main\lib\api.ts                                  4  * - Set auth with `setApiAuthToken(token)`; it injects the Authorization header.            
+E:\pi-kangpom-main\lib\api.ts                                131 export const setApiAuthToken = (token: string) => {                                          
+E:\pi-kangpom-main\lib\pi-payment.ts                           3 import { usePiAuth } from "@/contexts/auth-context";                                         
+E:\pi-kangpom-main\lib\pi-payment.ts                          25   const { sdk } = usePiAuth();                                                               
+E:\pi-kangpom-main\lib\pi-payment.ts                          36   const { sdk } = usePiAuth();                                                               
+E:\pi-kangpom-main\lib\pi-payment.ts                          57   const { sdk } = usePiAuth();                                                               
+
+
+

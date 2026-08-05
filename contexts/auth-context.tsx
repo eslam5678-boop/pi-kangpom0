@@ -184,8 +184,9 @@ interface PiAuthContextType {
   restoredPurchases: UserPurchaseBalance[] | null;
   reinitialize: () => Promise<void>;
   isLoading: boolean;
-  user: { username: string; id: string; roles?: string[] } | null;
+user: { username: string; id: string; roles?: string[] } | null;
   login: () => Promise<void>;
+  logout: () => void;
 }
 
 const PiAuthContext = createContext<PiAuthContextType | undefined>(undefined);
@@ -497,6 +498,78 @@ setAuthMessage("Loading SDKLite...");
     });
   }, []);
 
+const logout = () => {
+    console.log("[PiAuth] Logging out...");
+    try {
+      if (typeof window !== "undefined") {
+        const clearPiKeys = (storage: Storage) => {
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < storage.length; i += 1) {
+            const key = storage.key(i);
+            if (!key) continue;
+            const lower = key.toLowerCase();
+            if (
+              lower.includes("pi") ||
+              lower.includes("minepi") ||
+              lower.includes("auth") ||
+              lower.includes("session") ||
+              lower.includes("accesstoken") ||
+              lower.includes("access_token") ||
+              lower.includes("sdk")
+            ) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach((k) => storage.removeItem(k));
+          if (keysToRemove.length > 0) {
+            console.log("[PiAuth] Cleared storage keys:", keysToRemove);
+          }
+        };
+        clearPiKeys(window.localStorage);
+        try {
+          clearPiKeys(window.sessionStorage);
+        } catch (sessionErr) {
+          console.error("[PiAuth] Failed to clear sessionStorage:", sessionErr);
+        }
+      }
+
+      setIsAuthenticated(false);
+      setUser(null);
+      setSdk(null);
+      setProducts(null);
+      setRestoredPurchases(null);
+      setHasError(false);
+      setAuthMessage("Signed out");
+
+      const piInstance = (window as any)?.Pi;
+      if (piInstance && typeof piInstance.signOut === "function") {
+        try {
+          const signOutResult = piInstance.signOut();
+          if (signOutResult && typeof signOutResult.then === "function") {
+            signOutResult.then(
+              () => console.log("[PiAuth] Pi.signOut() succeeded"),
+              (signOutErr: unknown) =>
+                console.error("[PiAuth] Pi.signOut() failed:", signOutErr)
+            );
+          } else {
+            console.log("[PiAuth] Pi.signOut() called synchronously");
+          }
+        } catch (signOutError) {
+          console.error("[PiAuth] Pi.signOut() threw:", signOutError);
+        }
+      } else {
+        console.log("[PiAuth] window.Pi.signOut not available");
+      }
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 0);
+    } catch (logoutError) {
+      console.error("[PiAuth] Logout failed:", logoutError);
+      window.location.reload();
+    }
+  };
+
   const value: PiAuthContextType = {
     isAuthenticated,
     authMessage,
@@ -511,6 +584,7 @@ setAuthMessage("Loading SDKLite...");
       id: "guest-" + Math.random().toString(36).slice(2, 9)
     },
     login: initialize,
+    logout,
   };
 
   return (
