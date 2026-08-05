@@ -53,6 +53,49 @@ function parseJsonSafely(value: any): any {
   }
 }
 
+/**
+ * Clear any locally cached Pi auth/session state from localStorage.
+ *
+ * The Pi Network SDK caches auth server-side, which can cause Pi.authenticate()
+ * to skip the permissions screen and leave the session without the "payments"
+ * scope (→ "Cannot create a payment without payments scope").
+ *
+ * Removing Pi-related keys forces the SDK to re-run the permissions prompt
+ * so the user can consent to the requested scopes again.
+ */
+function clearPiAuthState(): void {
+  try {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return;
+    }
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key) continue;
+      const lower = key.toLowerCase();
+      // Match any key that looks Pi/session/auth related without being too broad.
+      if (
+        lower.includes("pi") ||
+        lower.includes("minepi") ||
+        lower.includes("auth") ||
+        lower.includes("session") ||
+        lower.includes("accesstoken") ||
+        lower.includes("access_token")
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+    if (keysToRemove.length > 0) {
+      console.log("[PiAuth] Cleared Pi-related localStorage keys:", keysToRemove);
+    } else {
+      console.log("[PiAuth] No Pi-related localStorage keys to clear");
+    }
+  } catch (e) {
+    console.error("[PiAuth] Failed to clear Pi auth state:", e);
+  }
+}
+
 function requestParentCredentials(): Promise<{ accessToken: string; appId: string | null } | null> {
   try {
     if (!isInIframe()) {
@@ -310,9 +353,31 @@ setAuthMessage("Initializing SDKLite...");
       // IMPORTANT: The "payments" scope is required for Pi.createPayment() to work.
       if (typeof window !== "undefined" && piInstance && typeof piInstance.authenticate === "function") {
         try {
-          const authResult = await piInstance.authenticate(["username", "payments"], (payment: any) => {
+          // Clear any server-cached / locally cached Pi auth state so the SDK is
+          // forced to show the permissions prompt again and grant the requested scopes.
+          clearPiAuthState();
+
+          // Strictly request the scopes required for payments. The Pi SDK v2 expects
+          // authenticate(scopes, onIncompletePaymentFound). To force the permissions
+          // prompt (rather than silently reusing a cached session), we attach the SDK
+          // config parameters (scopes/appId/sandbox/version) as properties on the
+          // incomplete-payment callback — a pattern the SDK uses to pick up config
+          // while still invoking the callback for incomplete payments.
+          const piScopes: string[] = ["username", "payments"];
+          const onIncompletePayment: ((payment: any) => void) & {
+            scopes?: string[];
+            appId?: string;
+            sandbox?: boolean;
+            version?: string;
+          } = (payment: any) => {
             console.log("Incomplete payment found:", payment);
-          });
+          };
+          onIncompletePayment.scopes = piScopes;
+          onIncompletePayment.appId = PI_NETWORK_CONFIG.APP_ID;
+          onIncompletePayment.sandbox = PI_NETWORK_CONFIG.SANDBOX;
+          onIncompletePayment.version = "2.0";
+
+          const authResult = await piInstance.authenticate(piScopes, onIncompletePayment);
           if (authResult?.accessToken) {
             await fetch("/api/auth/pi", {
               method: "POST",
