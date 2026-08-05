@@ -236,8 +236,8 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const initialize = async () => {
-    console.log("[PiAuth] Initialize called");
-setIsLoading(true);
+console.log("[PiAuth] Initialize called");
+    setIsLoading(true);
     setHasError(false);
     setRestoredPurchases(null);
     
@@ -285,11 +285,11 @@ setIsLoading(true);
       setAuthMessage("Loading SDKLite...");
       await loadSDKLite();
 
-      setAuthMessage("Initializing SDKLite...");
+setAuthMessage("Initializing SDKLite...");
       const sdkInstance = await (window as any).SDKLite.init();
       
       setAuthMessage("Authenticating with Pi Network...");
-      console.log("[PiAuth] About to call sdkInstance.login() with scopes:", ["username"]);
+      console.log("[PiAuth] About to call sdkInstance.login() with scopes:", ["username", "payments"]);
       
       const success = await sdkInstance.login();
       
@@ -306,10 +306,11 @@ setIsLoading(true);
         throw error;
       }
 
-      // Backend session validation with /api/auth/pi as required by Pi App Studio
+// Backend session validation with /api/auth/pi as required by Pi App Studio
+      // IMPORTANT: The "payments" scope is required for Pi.createPayment() to work.
       if (typeof window !== "undefined" && piInstance && typeof piInstance.authenticate === "function") {
         try {
-          const authResult = await piInstance.authenticate(["username"], (payment: any) => {
+          const authResult = await piInstance.authenticate(["username", "payments"], (payment: any) => {
             console.log("Incomplete payment found:", payment);
           });
           if (authResult?.accessToken) {
