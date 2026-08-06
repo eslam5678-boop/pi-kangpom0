@@ -92,7 +92,7 @@ const { products, sdk, user, isLoading, logout } = usePiAuth()
                 </p>
               </div>
             </div>
-            <div className="flex gap-2 flex-wrap items-center">
+<div className="flex gap-2 flex-wrap items-center">
               <button
                 onClick={() => setShowSettings(!showSettings)}
                 className="text-lg hover:scale-110 transition-transform"
@@ -111,6 +111,14 @@ const { products, sdk, user, isLoading, logout } = usePiAuth()
                 <span className="text-sm">🪙</span>
                 <span className="text-sm font-bold text-primary">{state?.coins ?? 0}</span>
               </div>
+              {/* Standalone logout button - highly visible in the header */}
+              <button
+                onClick={() => logout()}
+                className="bg-destructive text-white font-bold text-xs px-3 py-2 rounded-lg hover:bg-destructive/80 active:scale-95 transition-all flex items-center gap-1 shadow-md"
+                title="تسجيل الخروج"
+              >
+🚪 تسجيل الخروج
+              </button>
             </div>
           </div>
 
