@@ -184,7 +184,7 @@ interface PiAuthContextType {
   restoredPurchases: UserPurchaseBalance[] | null;
   reinitialize: () => Promise<void>;
   isLoading: boolean;
-user: { username: string; id: string; roles?: string[] } | null;
+  user: { username: string; id: string; roles?: string[] } | null;
   login: () => Promise<void>;
   logout: () => void;
 }
@@ -263,9 +263,7 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
   const [hasError, setHasError] = useState(false);
   const [sdk, setSdk] = useState<SDKLiteInstance | null>(null);
   const [products, setProducts] = useState<Product[] | null>(null);
-  const [restoredPurchases, setRestoredPurchases] = useState<
-    UserPurchaseBalance[] | null
->(null);
+  const [restoredPurchases, setRestoredPurchases] = useState<UserPurchaseBalance[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<{ username: string; id: string; roles?: string[] } | null>(null);
 
@@ -280,7 +278,7 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const initialize = async () => {
-console.log("[PiAuth] Initialize called");
+    console.log("[PiAuth] Initialize called");
     setIsLoading(true);
     setHasError(false);
     setRestoredPurchases(null);
@@ -326,7 +324,7 @@ console.log("[PiAuth] Initialize called");
       console.log("[PiAuth] Pi.init() succeeded, current appId:", 
         typeof window !== "undefined" ? (piInstance as any)?.getAppId?.() : "N/A");
 
-setAuthMessage("Loading SDKLite...");
+      setAuthMessage("Loading SDKLite...");
       await loadSDKLite();
 
       setAuthMessage("Initializing SDKLite...");
@@ -498,7 +496,7 @@ setAuthMessage("Loading SDKLite...");
     });
   }, []);
 
-const logout = () => {
+  const logout = () => {
     console.log("[PiAuth] Logging out...");
     try {
       if (typeof window !== "undefined") {
