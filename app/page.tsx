@@ -464,9 +464,9 @@ useEffect(() => {
     try {
       const pi = (window as any)?.Pi;
       if (pi && typeof pi.init === "function") {
-        pi.init({ version: "2.0", sandbox: false })
+        pi.init({ version: "2.0", sandbox: true })
           .then(() => {
-            console.log("[PiPay] Pi.init({ version: '2.0', sandbox: false }) succeeded");
+            console.log("[PiPay] Pi.init({ version: '2.0', sandbox: true }) succeeded");
           })
           .catch((err: unknown) => {
             console.warn("[PiPay] Pi.init() failed (non-fatal):", err);
