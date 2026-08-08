@@ -354,11 +354,92 @@ const factoryRecipes: ProductionRecipe[] = [
   }
 ];
 
+// ==========================================
+// TEMP Pi SDK Diagnostic Panel (عرض فقط — لا يستدعي أي Pi API)
+// ==========================================
+function PiDiagnosticPanel({ piDiag }: { piDiag: { piPresent: boolean; authenticated: unknown; consentedScopes: unknown; error: string | null } }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 8,
+        right: 8,
+        zIndex: 9999,
+        maxWidth: "min(90vw, 300px)",
+        background: "rgba(0,0,0,0.92)",
+        border: "2px solid #d4af37",
+        borderRadius: 12,
+        color: "#fff",
+        fontSize: 11,
+        fontFamily: "monospace",
+        padding: 8,
+        boxShadow: "0 0 20px rgba(212,175,55,0.5)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <b style={{ color: "#d4af37" }}>Pi SDK (تشخيص مؤقت)</b>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          style={{ background: "#d4af37", color: "#000", border: "none", borderRadius: 6, fontWeight: 800, cursor: "pointer", padding: "0 6px" }}
+        >
+          {open ? "✕" : "+"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ lineHeight: 1.6 }}>
+          <div><b style={{ color: "#7dd3fc" }}>window.Pi:</b> {piDiag.piPresent ? "موجود ✅" : "غير موجود ❌"}</div>
+          <div>
+            <b style={{ color: "#86efac" }}>authenticated:</b>{" "}
+            <span style={{ color: piDiag.authenticated ? "#86efac" : "#fca5a5" }}>
+              {String(piDiag.authenticated)}
+            </span>
+          </div>
+          <div>
+            <b style={{ color: "#c4b5fd" }}>consentedScopes:</b>{" "}
+            <span style={{ color: "#c4b5fd" }}>{JSON.stringify(piDiag.consentedScopes)}</span>
+          </div>
+          {piDiag.error && <div style={{ color: "#f87171" }}>⚠ error: {piDiag.error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function KingdomFarmPage() {
   const { logout } = usePiAuth();
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("day");
   const [criticalAnimal, setCriticalAnimal] = useState<FarmAnimal | null>(null);
+
+  // ==========================================
+  // TEMP DIAGNOSTIC PANEL (read-only Pi SDK)
+  // ==========================================
+  const [piDiag, setPiDiag] = useState<{
+    piPresent: boolean;
+    authenticated: unknown;
+    consentedScopes: unknown;
+    error: string | null;
+  }>({ piPresent: false, authenticated: undefined, consentedScopes: undefined, error: null });
+
+  useEffect(() => {
+    const readPi = () => {
+      try {
+        const pi = (window as any)?.Pi;
+        setPiDiag({
+          piPresent: !!pi,
+          authenticated: pi?.authenticated,
+          consentedScopes: pi?.consentedScopes,
+          error: null,
+        });
+      } catch (e: any) {
+        setPiDiag((prev) => ({ ...prev, error: e?.message || String(e) }));
+      }
+    };
+    readPi();
+    const id = setInterval(readPi, 2000);
+    return () => clearInterval(id);
+  }, []);
 
   // حالة اللغة المختارة (افتراضياً العربية أو الإنجليزية)
   const [currentLang, setCurrentLang] = useState<string>('ar');
@@ -1124,6 +1205,13 @@ const assetAny = selectedAssetToPlace as any;
       {isLoading && (
         <PharaonicSplashScreen onLoadingComplete={() => setIsLoading(false)} />
       )}
+
+      {/* ==========================================
+          TEMP DIAGNOSTIC PANEL (اضغط لإخفاء/إظهار)
+          يقرأ فقط window.Pi?.authenticated
+          و window.Pi?.consentedScopes — عرض فقط
+      ========================================== */}
+      <PiDiagnosticPanel piDiag={piDiag} />
 
       <div
         className="transition-all duration-1000 ease-in-out min-h-screen flex flex-col justify-between"
