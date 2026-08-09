@@ -374,7 +374,31 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
         sandbox?: boolean;
         version?: string;
       } = (payment: any) => {
-        console.log("Incomplete payment found:", payment);
+        console.log("Incomplete payment found, recovering via backend:", payment);
+        // Recover the incomplete payment through the existing backend
+        // approval/completion mechanism so it is not silently ignored.
+        const paymentId = payment?.payment?.id || payment?.paymentId;
+        const txid = payment?.transaction?.txid || payment?.txid;
+        if (paymentId) {
+          (async () => {
+            try {
+              // Incomplete payments may be pending approval or completion.
+              // Attempt completion first (includes approval server-side if needed).
+              await fetch("/api/auth/pi", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "complete",
+                  paymentId,
+                  txid: txid || "",
+                }),
+              });
+              console.log("[PiAuth] Incomplete payment completed via backend:", paymentId);
+            } catch (e) {
+              console.error("[PiAuth] Incomplete payment recovery failed:", e);
+            }
+          })();
+        }
       };
       onIncompletePayment.scopes = piScopes;
       onIncompletePayment.appId = PI_NETWORK_CONFIG.APP_ID;

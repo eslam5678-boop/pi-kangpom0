@@ -1,15 +1,33 @@
-# TODO: Pi SDK Payment Fix + Logout Button (inside app/page.tsx only)
+# Task Steps — COMPLETED
 
-## Steps
-- [x] 1. Add imports: `usePiAuth` (auth-context) + `getPiUid` (pi-direct-payment)
-- [x] 2. Add `logout` from `usePiAuth()` inside component
-- [x] 3. Add safe `window.Pi.init({ version: "2.0", sandbox: false })` useEffect
-- [x] 4. Add `handlePiPayment()` invoking `Pi.createPayment()` with all callbacks (approve/complete/cancel/error via /api/auth/pi)
-- [x] 5. Add "logout" translation keys + render Logout button in header wired to `logout()`
-- [x] 6. Wire purchase actions (land "استحواذ", BashaRescueModal onRescueWithPi, Pi-priced tile placement) to `handlePiPayment`
-- [x] 7. Build + verify no TS errors
+## Modify existing Pi authentication/payment implementation
 
-## Constraints
-- Modify ONLY app/page.tsx in-place
-- Do not delete/shorten/replace existing game code, UI, or state logic
+### Step 1: app/api/auth/pi/route.ts ✅
+- [x] Use `process.env.PI_NETWORK_API_KEY || process.env.PI_API_KEY`
+- [x] Keep API key server-side only
+- [x] Add validation for Lifeline product (lifeline_revive / 0.5 Pi / "Lifeline: Revive dead asset")
+- [x] Do not trust arbitrary client-provided prices
 
+### Step 2: components/farm/lifeline-modal.tsx ✅
+- [x] Change REVIVE_PI_COST from 1 to 0.5
+- [x] Change product ID from "farm_revive" to "lifeline_revive"
+- [x] Use exact product: productId "lifeline_revive", amount 0.5, memo "Lifeline: Revive dead asset"
+- [x] Preserve assetUid + revive action metadata
+- [x] Add productId/product metadata consistently
+
+### Step 3: contexts/auth-context.tsx ✅
+- [x] Keep already-fixed parentCredentials behavior (no early return)
+- [x] Keep exactly ONE active Pi.authenticate() with scopes ["username", "payments"]
+- [x] No SDKLite.login()
+- [x] Modify onIncompletePayment to route through backend recovery instead of only console.log
+- [x] Do not create second payment/auth system
+
+### Step 4: Verify ✅
+- [x] Run `npx tsc --noEmit` → EXIT=0 (no errors)
+- [x] Run build (`pnpm build`) → Compiled successfully, type check passed
+- [x] Search entire repo again → confirmed
+- [x] One Pi.authenticate, scopes, no SDKLite.login, parentCredentials no short-circuit,
+      Pi.init before createPayment, onIncompletePayment handled, Lifeline = 0.5 Pi,
+      productId = "lifeline_revive", memo = "Lifeline: Revive dead asset",
+      backend uses PI_NETWORK_API_KEY || PI_API_KEY, API key server-side only,
+      approve/complete endpoints functional

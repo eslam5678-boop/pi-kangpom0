@@ -8,8 +8,9 @@ import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
 
 // تعريف الثوابت محلياً لتجنب مشاكل التصدير من ملف الأنواع
 const REVIVE_ADS_REQUIRED = 3
-const REVIVE_PI_COST = 1
-const LIFELINE_PRODUCT_ID = "farm_revive"
+const REVIVE_PI_COST = 0.5
+const LIFELINE_PRODUCT_ID = "lifeline_revive"
+const LIFELINE_MEMO = "Lifeline: Revive dead asset"
 
 export function LifelineModal({
   asset,
@@ -58,8 +59,14 @@ const handlePay = async () => {
       const uid = await getPiUid()
       await payWithPi({
         amount: REVIVE_PI_COST,
-        memo: `إعادة إحياء ${def.name}`,
-        metadata: { assetUid: asset.uid, action: "revive" },
+        memo: LIFELINE_MEMO,
+        metadata: {
+          assetUid: asset.uid,
+          action: "revive",
+          productId: LIFELINE_PRODUCT_ID,
+          product: LIFELINE_PRODUCT_ID,
+          amount: REVIVE_PI_COST,
+        },
         uid,
       })
       reviveAsset(asset.uid)

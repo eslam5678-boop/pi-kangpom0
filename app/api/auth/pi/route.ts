@@ -1,5 +1,38 @@
 import { NextResponse } from "next/server";
 
+// The developer's configured Pi payment product (Lifeline / Revive dead asset).
+// Server-side source of truth — the client may NOT override the price.
+const LIFELINE_PRODUCT = {
+  productId: "lifeline_revive",
+  amount: 0.5,
+  memo: "Lifeline: Revive dead asset",
+} as const;
+
+/**
+ * Validate a Lifeline payment request against the server-side product definition.
+ * Returns an error message string when invalid, or null when valid.
+ * Arbitrary client-provided amounts/memos/productIds are rejected.
+ */
+function validateLifelinePayment(body: Record<string, unknown>): string | null {
+  const metadata = (body.metadata && typeof body.metadata === "object" ? body.metadata : {}) as Record<string, unknown>;
+  const clientProductId = (body.productId as string) || (metadata.productId as string) || (metadata.product as string);
+  const clientAmount = typeof body.amount === "number" ? body.amount : Number(body.amount);
+  const clientMemo = body.memo as string;
+
+  if (clientProductId && clientProductId !== LIFELINE_PRODUCT.productId) {
+    return `Invalid product: expected '${LIFELINE_PRODUCT.productId}', got '${clientProductId}'`;
+  }
+  if (typeof clientAmount === "number" && !Number.isNaN(clientAmount)) {
+    if (Math.abs(clientAmount - LIFELINE_PRODUCT.amount) > 1e-9) {
+      return `Invalid amount: expected ${LIFELINE_PRODUCT.amount} Pi, got ${clientAmount}`;
+    }
+  }
+  if (clientMemo && clientMemo !== LIFELINE_PRODUCT.memo) {
+    return `Invalid memo: expected '${LIFELINE_PRODUCT.memo}'`;
+  }
+  return null;
+}
+
 // Server-side logging helper (visible in Vercel function logs)
 function logServer(prefix: string, data: Record<string, unknown>) {
   console.log(`[api/auth/pi] ${prefix}`, JSON.stringify({ time: new Date().toISOString(), ...data }));
@@ -12,9 +45,14 @@ export async function POST(request: Request) {
 
     logServer("request", { action, hasBody: !!body });
 
-    const piApiKey = process.env.PI_API_KEY;
+    // Preferred: PI_NETWORK_API_KEY; backwards-compatible fallback: PI_API_KEY.
+    // Remains server-side only — never exposed to the browser.
+    const piApiKey =
+      process.env.PI_NETWORK_API_KEY ||
+      process.env.PI_API_KEY;
     logServer("config", {
-      piApiKeyPresent: !!piApiKey,
+      piNetworkApiKeyPresent: !!process.env.PI_NETWORK_API_KEY,
+      piApiKeyPresent: !!process.env.PI_API_KEY,
       piApiKeyLength: piApiKey ? piApiKey.length : 0,
     });
 
@@ -71,6 +109,16 @@ export async function POST(request: Request) {
           );
         }
 
+        // Validate the Lifeline product when product details are supplied.
+        // Arbitrary client-provided amounts/memos/productIds are rejected.
+        const approveValidationError = validateLifelinePayment(body);
+        if (approveValidationError) {
+          return NextResponse.json(
+            { error: approveValidationError },
+            { status: 400 }
+          );
+        }
+
         if (!piApiKey) {
           return NextResponse.json(
             {
@@ -120,6 +168,16 @@ export async function POST(request: Request) {
         if (!paymentId || !txid) {
           return NextResponse.json(
             { error: "Payment ID and TxID are required" },
+            { status: 400 }
+          );
+        }
+
+        // Validate the Lifeline product when product details are supplied.
+        // Arbitrary client-provided amounts/memos/productIds are rejected.
+        const completeValidationError = validateLifelinePayment(body);
+        if (completeValidationError) {
+          return NextResponse.json(
+            { error: completeValidationError },
             { status: 400 }
           );
         }
