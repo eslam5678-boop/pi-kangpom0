@@ -267,7 +267,7 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<{ username: string; id: string; roles?: string[] } | null>(null);
 
-  const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
+const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
     try {
       const { products } = await sdkInstance.state.products();
       setProducts(products);
@@ -287,17 +287,15 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
       console.log("[PiAuth] Probing for parent credentials");
       const parentCredentials = await requestParentCredentials();
       if (parentCredentials) {
-        console.log("[PiAuth] Parent credentials found");
-        setIsAuthenticated(true);
-        setUser({
-          username: "مستخدم App Studio",
-          id: parentCredentials.appId || "app-studio-user"
-        });
-        setIsLoading(false);
-        return;
+        // Parent credentials are only retained for backend/preview metadata.
+        // They are NOT proof that the Pi SDK authentication succeeded, so we
+        // do NOT return early here. The real Pi SDK authentication flow MUST
+        // still run below (loadPiSDK → Pi.init → SDKLite.init →
+        // clearPiAuthState → Pi.authenticate([...])).
+        console.log("[PiAuth] Parent credentials found (retained for preview metadata, not used as auth)");
+      } else {
+        console.log("[PiAuth] No parent credentials, attempting Pi SDK");
       }
-
-      console.log("[PiAuth] No parent credentials, attempting Pi SDK");
       setAuthMessage("Loading Pi SDK...");
       await loadPiSDK();
       setAuthMessage("Initializing Pi Network...");
