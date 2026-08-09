@@ -510,7 +510,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
     const timeout = setTimeout(() => {
       console.log("[PiAuth] Auth initialization timeout (30s) - continuing with guest mode");
       setIsLoading(false);
-    }, 30000);
+    }, 130000);
     
     initPromise.finally(() => {
       clearTimeout(timeout);

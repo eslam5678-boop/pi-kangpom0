@@ -507,7 +507,7 @@ export default function KingdomFarmPage() {
         if (prev === "night") return "sunrise";
         return "day";
       });
-    }, 30000);
+    }, 130000);
 
     const riskTimer = setTimeout(() => {
       setCriticalAnimal({
