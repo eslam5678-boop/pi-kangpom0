@@ -357,8 +357,56 @@ const factoryRecipes: ProductionRecipe[] = [
 // ==========================================
 // TEMP Pi SDK Diagnostic Panel (عرض فقط — لا يستدعي أي Pi API)
 // ==========================================
-function PiDiagnosticPanel({ piDiag }: { piDiag: { piPresent: boolean; authenticated: unknown; consentedScopes: unknown; error: string | null } }) {
+function PiDiagnosticPanel({
+  piDiag,
+  sdkAvailable,
+  isAuthenticated,
+  hasError,
+  authMessage,
+  authDiag,
+}: {
+  piDiag: { piPresent: boolean; authenticated: unknown; consentedScopes: unknown; error: string | null };
+  sdkAvailable: boolean;
+  isAuthenticated: boolean;
+  hasError: boolean;
+  authMessage: string;
+  authDiag: string[];
+}) {
   const [open, setOpen] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const isIframe = typeof window !== "undefined" && window.self !== window.top;
+  const sdklitePresent = typeof window !== "undefined" && !!(window as any).SDKLite;
+  const pi = typeof window !== "undefined" ? (window as any)?.Pi : undefined;
+
+  const copyAll = () => {
+    const text = [
+      "=== Pi Kingdom Diagnose ===",
+      `piPresent=${piDiag.piPresent}`,
+      `authenticated=${String(piDiag.authenticated)}`,
+      `consentedScopes=${JSON.stringify(piDiag.consentedScopes)}`,
+      `isAppStudioIframe=${isIframe}`,
+      `SDKLiteLoaded=${sdklitePresent}`,
+      `sdkInstance=${sdkAvailable}`,
+      `isAuthenticated=${isAuthenticated}`,
+      `hasError=${hasError}`,
+      `authMessage=${authMessage}`,
+      "--- steps ---",
+      ...authDiag,
+    ].join("\n");
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        })
+        .catch(() => {});
+    } else {
+      window.prompt("انسخ التشخيص:", text);
+    }
+  };
+
   return (
     <div
       style={{
@@ -366,8 +414,8 @@ function PiDiagnosticPanel({ piDiag }: { piDiag: { piPresent: boolean; authentic
         top: 8,
         right: 8,
         zIndex: 9999,
-        maxWidth: "min(90vw, 300px)",
-        background: "rgba(0,0,0,0.92)",
+        maxWidth: "min(92vw, 340px)",
+        background: "rgba(0,0,0,0.94)",
         border: "2px solid #d4af37",
         borderRadius: 12,
         color: "#fff",
@@ -378,28 +426,79 @@ function PiDiagnosticPanel({ piDiag }: { piDiag: { piPresent: boolean; authentic
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <b style={{ color: "#d4af37" }}>Pi SDK (تشخيص مؤقت)</b>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          style={{ background: "#d4af37", color: "#000", border: "none", borderRadius: 6, fontWeight: 800, cursor: "pointer", padding: "0 6px" }}
-        >
-          {open ? "✕" : "+"}
-        </button>
+        <b style={{ color: "#d4af37" }}>🔍 حالة باي (تشخيص)</b>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            onClick={copyAll}
+            style={{ background: "#38bdf8", color: "#000", border: "none", borderRadius: 6, fontWeight: 800, cursor: "pointer", padding: "0 6px", fontSize: 10 }}
+          >
+            {copied ? "✓" : "نسخ"}
+          </button>
+          <button
+            onClick={() => setOpen((o) => !o)}
+            style={{ background: "#d4af37", color: "#000", border: "none", borderRadius: 6, fontWeight: 800, cursor: "pointer", padding: "0 6px" }}
+          >
+            {open ? "✕" : "+"}
+          </button>
+        </div>
       </div>
       {open && (
-        <div style={{ lineHeight: 1.6 }}>
-          <div><b style={{ color: "#7dd3fc" }}>window.Pi:</b> {piDiag.piPresent ? "موجود ✅" : "غير موجود ❌"}</div>
+        <div style={{ lineHeight: 1.7 }}>
+          <div>
+            البيئة:{" "}
+            <b style={{ color: isIframe ? "#c084fc" : "#fbbf24" }}>
+              {isIframe ? "App Studio (iframe) 🟣" : "متصفح مستقل"}
+            </b>
+          </div>
+          <div>
+            <b style={{ color: "#7dd3fc" }}>window.Pi:</b> {piDiag.piPresent ? `موجود ✅ (appId=${pi?.getAppId?.() ?? "?"})` : "غير موجود ❌"}
+          </div>
+          <div>
+            <b style={{ color: "#7dd3fc" }}>window.SDKLite:</b> {sdklitePresent ? "موجود ✅" : "غير موجود ❌"}
+          </div>
+          <div>
+            <b style={{ color: "#86efac" }}>سيرفر الدفع جاهز:</b> {sdkAvailable ? "نعم ✅" : "لا ❌"}
+          </div>
           <div>
             <b style={{ color: "#86efac" }}>authenticated:</b>{" "}
-            <span style={{ color: piDiag.authenticated ? "#86efac" : "#fca5a5" }}>
-              {String(piDiag.authenticated)}
-            </span>
+            <span style={{ color: piDiag.authenticated ? "#86efac" : "#fca5a5" }}>{String(piDiag.authenticated)}</span>
           </div>
           <div>
             <b style={{ color: "#c4b5fd" }}>consentedScopes:</b>{" "}
             <span style={{ color: "#c4b5fd" }}>{JSON.stringify(piDiag.consentedScopes)}</span>
           </div>
+          <div>
+            <b style={{ color: "#fbbf24" }}>isAuthenticated:</b> {isAuthenticated ? "نعم ✅" : "لا ❌"}
+          </div>
+          <div>
+            <b style={{ color: hasError ? "#f87171" : "#86efac" }}>حالة المصادقة:</b>{" "}
+            {hasError ? "فشل ⚠" : "جيدة ✅"}
+          </div>
+          {authMessage && (
+            <div style={{ color: "#fbbf24" }}>الرسالة: {authMessage}</div>
+          )}
+          {authDiag.length > 0 && (
+            <pre
+              style={{
+                background: "#0b1120",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: 6,
+                margin: "6px 0",
+                maxHeight: 160,
+                overflow: "auto",
+                whiteSpace: "pre-wrap",
+                color: "#e2e8f0",
+                fontSize: 10,
+              }}
+            >
+              {authDiag.join("\n")}
+            </pre>
+          )}
           {piDiag.error && <div style={{ color: "#f87171" }}>⚠ error: {piDiag.error}</div>}
+          <div style={{ color: "#94a3b8", marginTop: 4 }}>
+            💡 في App Studio: نافذة باي (الصلاحيات/الموافقة/المحفظة) بتظهر من شاشة App Studio نفسها وقت الطلب — مش عند فتح اللعبة.
+          </div>
         </div>
       )}
     </div>
@@ -407,7 +506,7 @@ function PiDiagnosticPanel({ piDiag }: { piDiag: { piPresent: boolean; authentic
 }
 
 export default function KingdomFarmPage() {
-  const { logout } = usePiAuth();
+  const { logout, sdk, isAuthenticated, hasError, authMessage, diag } = usePiAuth();
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("day");
   const [criticalAnimal, setCriticalAnimal] = useState<FarmAnimal | null>(null);
@@ -1158,7 +1257,7 @@ const assetAny = selectedAssetToPlace as any;
           يقرأ فقط window.Pi?.authenticated
           و window.Pi?.consentedScopes — عرض فقط
       ========================================== */}
-      <PiDiagnosticPanel piDiag={piDiag} />
+      <PiDiagnosticPanel piDiag={piDiag} sdkAvailable={!!sdk} isAuthenticated={isAuthenticated} hasError={hasError} authMessage={authMessage} authDiag={diag} />
 
       <div
         className="transition-all duration-1000 ease-in-out min-h-screen flex flex-col justify-between"

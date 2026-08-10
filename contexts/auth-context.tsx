@@ -180,6 +180,8 @@ interface PiAuthContextType {
   isAuthenticated: boolean;
   authMessage: string;
   hasError: boolean;
+  /** سجل خطوات التهيئة — يظهر في لوحة التشخيص لمعرفة أي طبقة علّقت/فشلت */
+  diag: string[];
   sdk: SDKLiteInstance | null;
   products: Product[] | null;
   restoredPurchases: UserPurchaseBalance[] | null;
@@ -267,6 +269,11 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
   const [restoredPurchases, setRestoredPurchases] = useState<UserPurchaseBalance[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<{ username: string; id: string; roles?: string[] } | null>(null);
+  const [diag, setDiag] = useState<string[]>([]);
+  const pushDiag = (line: string) => {
+    const stamp = new Date().toLocaleTimeString();
+    setDiag((prev) => [...prev.slice(-40), `[${stamp}] ${line}`]);
+  };
 
 const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
     try {
@@ -280,6 +287,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
 
   const initialize = async () => {
     console.log("[PiAuth] Initialize called");
+    pushDiag("بدء تهيئة باي...");
     setIsLoading(true);
     setHasError(false);
     setRestoredPurchases(null);
@@ -289,8 +297,10 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
       const parentCredentials = await requestParentCredentials();
       if (parentCredentials) {
         console.log("[PiAuth] Parent credentials found");
+        pushDiag("وصلت بيانات الأب (App Studio) ✅");
       } else {
         console.log("[PiAuth] No parent credentials, attempting Pi SDK");
+        pushDiag("لا توجد بيانات من الأب — بيئة مستقلة");
       }
 
       // ------------------------------------------------------------
@@ -307,8 +317,10 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
         setPiSdk(sdkInstance);
         setSdk(sdkInstance);
         console.log("[PiAuth] SDKLite initialized");
-      } catch (sdkErr) {
+        pushDiag("SDKLite.init نجح — مسار App Studio جاهز ✅");
+      } catch (sdkErr: any) {
         console.warn("[PiAuth] SDKLite init failed (non-fatal in Pi Browser mode):", sdkErr);
+        pushDiag(`SDKLite.init فشل ❌: ${sdkErr?.message || String(sdkErr)}`);
       }
 
       // ------------------------------------------------------------
@@ -337,6 +349,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
             appId: PI_NETWORK_CONFIG.APP_ID,
           });
           console.log("[PiAuth] Pi.init() succeeded, appId:", (piInstance as any)?.getAppId?.() ?? "N/A");
+          pushDiag("Pi.init نجح ✅ (window.Pi متاح)");
         }
         if (piInstance && typeof piInstance.authenticate === "function") {
           // Strictly request the scopes required by Pi.createPayment().
@@ -376,6 +389,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
           if (scopesOk) {
             legacyAuthOk = true;
             console.log("[PiAuth] Valid Pi session present (payments scope granted)");
+            pushDiag("جلسة Pi موجودة بها صلاحية payments ✅");
           } else {
             if (piInstance.authenticated && typeof piInstance.signOut === "function") {
               try {
@@ -395,6 +409,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
             }
             legacyAuthOk = true;
             console.log("[PiAuth] Pi.authenticate() succeeded with scopes:", piScopes);
+            pushDiag("Pi.authenticate نجح ✅ — تم منح صلاحية الدفع");
 
             // Backend session validation with /api/auth/pi as required by Pi App Studio.
             try {
@@ -424,15 +439,18 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
             }
           }
         }
-      } catch (legacyErr) {
+      } catch (legacyErr: any) {
         console.warn("[PiAuth] Legacy Pi v2 init/authenticate failed (non-fatal):", legacyErr);
+        pushDiag(`Pi v2 (Pi Browser) فشل ❌: ${legacyErr?.message || String(legacyErr)}`);
       }
 
       if (!sdkInstance && !legacyAuthOk) {
+        pushDiag("لا توجد أي طبقة دفع متاحة ❌");
         throw new Error("Pi authentication unavailable — open the app inside Pi App Studio or the Pi Browser");
       }
 
       setIsAuthenticated(true);
+      pushDiag(sdkInstance ? "تم الدخول — الدفع جاهز عبر App Studio/SDKLite ✅" : "تم الدخول — الدفع جاهز عبر Pi v2 ✅");
       console.log("[PiAuth] Authentication successful:", {
         sdkLite: !!sdkInstance,
         legacyV2: legacyAuthOk,
@@ -589,6 +607,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
     isAuthenticated,
     authMessage,
     hasError,
+    diag,
     sdk,
     products,
     restoredPurchases,
