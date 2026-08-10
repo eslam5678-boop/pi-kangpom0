@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { usePiAuth } from  "@/contexts/auth-context";
 import { PRODUCT_CONFIG } from "@/lib/product-config"
-import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
+import { payWithPi } from "@/lib/pi-direct-payment"
 
 interface PaymentButtonProps {
   onSuccess?: () => void
@@ -37,8 +37,11 @@ export function PaymentButton({ onSuccess, onError }: PaymentButtonProps) {
 
   const handlePayment = async () => {
     try {
-      if (!sdk) {
-        const errorMsg = "SDK غير متاح"
+      const sdkOrPiAvailable =
+        !!sdk ||
+        (typeof window !== "undefined" && !!(window as any)?.Pi?.createPayment)
+      if (!sdkOrPiAvailable) {
+        const errorMsg = "SDK غير متاح — افتح اللعبة داخل Pi App Studio أو Pi Browser"
         setError(errorMsg)
         onError?.(errorMsg)
         return
@@ -49,13 +52,13 @@ export function PaymentButton({ onSuccess, onError }: PaymentButtonProps) {
       setSuccess(false)
 
       try {
-        console.log("[v0] Starting direct Pi payment for product:", product.id, "amount:", product.price_in_pi)
-        const uid = await getPiUid()
+        console.log("[v0] Starting Pi payment for product:", product.id, "amount:", product.price_in_pi)
+        // لا await قبل الاستدعاء — payWithPi يفتح واجهة الدفع في نفس لحظة الضغطة
         const result = await payWithPi({
+          productSlug: product.id,
           amount: product.price_in_pi || 1.0,
           memo: `شراء اللعبة - ${product.name}`,
           metadata: { productId: product.id, productName: product.name },
-          uid,
         })
 
         if (result) {

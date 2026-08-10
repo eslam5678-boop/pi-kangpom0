@@ -8,6 +8,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { PI_NETWORK_CONFIG } from "@/lib/system-config";
+import { setPiSdk, setCachedPiUid } from "@/lib/pi-direct-payment";
 import type {
   Product,
   SDKLiteInstance,
@@ -287,200 +288,172 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
       console.log("[PiAuth] Probing for parent credentials");
       const parentCredentials = await requestParentCredentials();
       if (parentCredentials) {
-        // Parent credentials are only retained for backend/preview metadata.
-        // They are NOT proof that the Pi SDK authentication succeeded, so we
-        // do NOT return early here. The real Pi SDK authentication flow MUST
-        // still run below (loadPiSDK → Pi.init → SDKLite.init →
-        // clearPiAuthState → Pi.authenticate([...])).
-        console.log("[PiAuth] Parent credentials found (retained for preview metadata, not used as auth)");
+        console.log("[PiAuth] Parent credentials found");
       } else {
         console.log("[PiAuth] No parent credentials, attempting Pi SDK");
       }
-      setAuthMessage("Loading Pi SDK...");
-      await loadPiSDK();
-      setAuthMessage("Initializing Pi Network...");
-      
-      const piInstance = (window as any).Pi;
 
-      console.log("[PiAuth] Pi.init() config:", {
-        version: "2.0",
-        sandbox: PI_NETWORK_CONFIG.SANDBOX,
-        appId: PI_NETWORK_CONFIG.APP_ID,
-        origin: typeof window !== "undefined" ? window.location.origin : "server",
-        piAppId: typeof window !== "undefined" ? (piInstance as any)?.getAppId?.() : "N/A",
-      });
-      
-      // Await Pi.init as a Promise
-      if (piInstance && typeof piInstance.init === "function") {
-        await piInstance.init({
+      // ------------------------------------------------------------
+      // PRIMARY — SDKLite (Pi App Studio). SDKLite owns auth and the
+      // payment UI in App Studio, so it is initialized first and
+      // registered with payWithPi() for sdk.makePurchase(productSlug).
+      // ------------------------------------------------------------
+      let sdkInstance: any = null;
+      try {
+        setAuthMessage("Loading SDKLite...");
+        await loadSDKLite();
+        setAuthMessage("Initializing SDKLite...");
+        sdkInstance = await (window as any).SDKLite.init();
+        setPiSdk(sdkInstance);
+        setSdk(sdkInstance);
+        console.log("[PiAuth] SDKLite initialized");
+      } catch (sdkErr) {
+        console.warn("[PiAuth] SDKLite init failed (non-fatal in Pi Browser mode):", sdkErr);
+      }
+
+      // ------------------------------------------------------------
+      // SECONDARY — Legacy Pi SDK v2 (Pi Browser classic apps).
+      // Authentication happens HERE at app entry — never at click time —
+      // so the permissions screen is granted once and Pi.createPayment()
+      // opens the wallet immediately inside the click handler.
+      // ------------------------------------------------------------
+      let legacyAuthOk = false;
+      try {
+        setAuthMessage("Loading Pi SDK...");
+        await loadPiSDK();
+        setAuthMessage("Initializing Pi Network...");
+        const piInstance = (window as any).Pi;
+        console.log("[PiAuth] Pi.init() config:", {
           version: "2.0",
           sandbox: PI_NETWORK_CONFIG.SANDBOX,
           appId: PI_NETWORK_CONFIG.APP_ID,
+          origin: typeof window !== "undefined" ? window.location.origin : "server",
+          piAppId: typeof window !== "undefined" ? (piInstance as any)?.getAppId?.() : "N/A",
         });
-      }
-
-      console.log("[PiAuth] Pi.init() succeeded, current appId:", 
-        typeof window !== "undefined" ? (piInstance as any)?.getAppId?.() : "N/A");
-
-      setAuthMessage("Loading SDKLite...");
-      await loadSDKLite();
-
-      setAuthMessage("Initializing SDKLite...");
-      const sdkInstance = await (window as any).SDKLite.init();
-
-      // ============================================================
-      // SINGLE authentication flow.
-      //
-      // The previous code authenticated TWICE:
-      //   1. sdkInstance.login()  → SDKLite internally calls
-      //      Pi.authenticate with ONLY the "username" scope, creating
-      //      a Pi session that Pi.createPayment() later rejects because
-      //      it lacks the "payments" scope.
-      //   2. piInstance.authenticate(["username","payments"]) → a
-      //      wrapped-in-catch "optional fallback" that never re-grants
-      //      the session because one already exists.
-      //
-      // The duplicate sdkInstance.login() has been REMOVED. We now run
-      // exactly ONE authentication via Pi.authenticate() requesting
-      // ["username", "payments"]. Because this authenticates the SAME
-      // window.Pi object that pi-direct-payment.ts uses for
-      // Pi.createPayment(), the payments session is shared and the
-      // "Cannot create a payment without payments scope" error is gone.
-      // ============================================================
-      if (
-        typeof window === "undefined" ||
-        !piInstance ||
-        typeof piInstance.authenticate !== "function"
-      ) {
-        throw new Error("Pi.authenticate is not available");
-      }
-
-      // Clear any server-cached / locally cached Pi auth state so the SDK
-      // is forced to show the permissions prompt again and grant the scopes.
-      clearPiAuthState();
-
-      // Reset any stale Pi SDK session before requesting the scopes again.
-      // The Pi Browser SDK caches auth server-side and can silently reuse a
-      // previously cached session that lacks the "payments" scope, skipping
-      // the permissions screen and making Pi.createPayment() fail with
-      // "Cannot create a payment without payments scope". Clearing localStorage
-      // alone cannot invalidate that cached session. Reset it using the same
-      // Pi.signOut() method already used by logout() in this file, so the
-      // Pi.authenticate() call below re-runs the permissions prompt.
-      if (piInstance && typeof piInstance.signOut === "function") {
-        try {
-          const signOutResult = piInstance.signOut();
-          if (signOutResult && typeof signOutResult.then === "function") {
-            await signOutResult;
-          }
-          console.log("[PiAuth] Stale Pi SDK session reset via Pi.signOut()");
-        } catch (signOutError) {
-          console.error("[PiAuth] Pi.signOut() failed (non-fatal):", signOutError);
+        if (piInstance && typeof piInstance.init === "function") {
+          await piInstance.init({
+            version: "2.0",
+            sandbox: PI_NETWORK_CONFIG.SANDBOX,
+            appId: PI_NETWORK_CONFIG.APP_ID,
+          });
+          console.log("[PiAuth] Pi.init() succeeded, appId:", (piInstance as any)?.getAppId?.() ?? "N/A");
         }
-      } else {
-        console.log("[PiAuth] window.Pi.signOut not available — proceeding without session reset");
-      }
+        if (piInstance && typeof piInstance.authenticate === "function") {
+          // Strictly request the scopes required by Pi.createPayment().
+          const piScopes: string[] = ["username", "payments"];
+          const onIncompletePayment = (payment: any) => {
+            console.log("Incomplete payment found, recovering via backend:", payment);
+            const paymentId = payment?.payment?.id || payment?.paymentId;
+            const txid = payment?.transaction?.txid || payment?.txid;
+            if (paymentId) {
+              (async () => {
+                try {
+                  await fetch("/api/auth/pi", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "complete",
+                      paymentId,
+                      txid: txid || "",
+                    }),
+                  });
+                  console.log("[PiAuth] Incomplete payment completed via backend:", paymentId);
+                } catch (e) {
+                  console.error("[PiAuth] Incomplete payment recovery failed:", e);
+                }
+              })();
+            }
+          };
 
-      setAuthMessage("Authenticating with Pi Network...");
+          // Keep a valid session that already granted the "payments" scope.
+          // Only reset a STALE session that lacks it, so the permissions
+          // screen can re-appear and grant the missing scope.
+          const scopesOk =
+            piInstance.authenticated === true &&
+            Array.isArray(piInstance.consentedScopes) &&
+            piInstance.consentedScopes.includes(piScopes[1]);
 
-      // Strictly request the scopes required for payments. The Pi SDK v2 expects
-      // authenticate(scopes, onIncompletePaymentFound). To force the permissions
-      // prompt (rather than silently reusing a cached session), we attach the SDK
-      // config parameters (scopes/appId/sandbox/version) as properties on the
-      // incomplete-payment callback — a pattern the SDK uses to pick up config
-      // while still invoking the callback for incomplete payments.
-      const piScopes: string[] = ["username", "payments"];
-      const onIncompletePayment: ((payment: any) => void) & {
-        scopes?: string[];
-        appId?: string;
-        sandbox?: boolean;
-        version?: string;
-      } = (payment: any) => {
-        console.log("Incomplete payment found, recovering via backend:", payment);
-        // Recover the incomplete payment through the existing backend
-        // approval/completion mechanism so it is not silently ignored.
-        const paymentId = payment?.payment?.id || payment?.paymentId;
-        const txid = payment?.transaction?.txid || payment?.txid;
-        if (paymentId) {
-          (async () => {
+          if (scopesOk) {
+            legacyAuthOk = true;
+            console.log("[PiAuth] Valid Pi session present (payments scope granted)");
+          } else {
+            if (piInstance.authenticated && typeof piInstance.signOut === "function") {
+              try {
+                const signOutResult = piInstance.signOut();
+                if (signOutResult && typeof signOutResult.then === "function") {
+                  await signOutResult;
+                }
+                console.log("[PiAuth] Stale session reset via Pi.signOut()");
+              } catch (signOutError) {
+                console.error("[PiAuth] Pi.signOut() failed (non-fatal):", signOutError);
+              }
+            }
+            setAuthMessage("Authenticating with Pi Network...");
+            const authResult = await piInstance.authenticate(piScopes, onIncompletePayment);
+            if (!authResult?.accessToken) {
+              throw new Error("Pi Network authentication failed - no access token returned");
+            }
+            legacyAuthOk = true;
+            console.log("[PiAuth] Pi.authenticate() succeeded with scopes:", piScopes);
+
+            // Backend session validation with /api/auth/pi as required by Pi App Studio.
             try {
-              // Incomplete payments may be pending approval or completion.
-              // Attempt completion first (includes approval server-side if needed).
               await fetch("/api/auth/pi", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  action: "complete",
-                  paymentId,
-                  txid: txid || "",
-                }),
+                body: JSON.stringify({ action: "auth", accessToken: authResult.accessToken }),
               });
-              console.log("[PiAuth] Incomplete payment completed via backend:", paymentId);
-            } catch (e) {
-              console.error("[PiAuth] Incomplete payment recovery failed:", e);
+            } catch (backendError) {
+              console.warn("[PiAuth] Backend token verification failed:", backendError);
             }
-          })();
-        }
-      };
-      onIncompletePayment.scopes = piScopes;
-      onIncompletePayment.appId = PI_NETWORK_CONFIG.APP_ID;
-      onIncompletePayment.sandbox = PI_NETWORK_CONFIG.SANDBOX;
-      onIncompletePayment.version = "2.0";
+          }
 
-      const authResult = await piInstance.authenticate(piScopes, onIncompletePayment);
-      if (!authResult?.accessToken) {
-        throw new Error("Pi Network authentication failed - no access token returned");
-      }
-      console.log("[PiAuth] Pi.authenticate() succeeded with scopes:", piScopes);
-
-      // Backend session validation with /api/auth/pi as required by Pi App Studio.
-      try {
-        await fetch("/api/auth/pi", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "auth", accessToken: authResult.accessToken }),
-        });
-      } catch (backendError) {
-        console.warn("[PiAuth] Backend token verification failed:", backendError);
-      }
-
-      setSdk(sdkInstance);
-      setIsAuthenticated(true);
-      
-      console.log("[PiAuth] Authentication successful:", {
-        appId: PI_NETWORK_CONFIG.APP_ID,
-        origin: window.location.origin,
-        pi_getAppId: typeof (piInstance as any)?.getAppId === 'function' ? (piInstance as any).getAppId() : "N/A",
-        url: window.location.href,
-      });
-      
-      try {
-        if (piInstance && typeof piInstance.user?.getMe === 'function') {
-          const userInfo = await piInstance.user.getMe();
-          if (userInfo && userInfo.username) {
-            setUser({
-              username: userInfo.username,
-              id: userInfo.uid || "pi-user-" + Math.random().toString(36).slice(2, 9)
-            });
+          // Cache the uid synchronously so payWithPi() never awaits it in a click.
+          if (typeof piInstance.user?.getMe === "function") {
+            try {
+              const userInfo = await piInstance.user.getMe();
+              if (userInfo?.uid) setCachedPiUid(userInfo.uid);
+              if (userInfo?.username) {
+                setUser({
+                  username: userInfo.username,
+                  id: userInfo.uid || "pi-user-" + Math.random().toString(36).slice(2, 9),
+                });
+              }
+            } catch (userInfoError) {
+              console.error("[PiAuth] Failed to get user info:", userInfoError);
+            }
           }
         }
-      } catch (userInfoError) {
-        console.error("[PiAuth] Failed to get user info:", userInfoError);
-        setUser({
-          username: "مستخدم Pi",
-          id: "pi-user-" + Math.random().toString(36).slice(2, 9)
-        });
+      } catch (legacyErr) {
+        console.warn("[PiAuth] Legacy Pi v2 init/authenticate failed (non-fatal):", legacyErr);
       }
-      
-      await fetchProducts(sdkInstance);
 
-      try {
-        const { purchases } = await sdkInstance.state.restore();
-        setRestoredPurchases(purchases);
-        console.log("[PiAuth] Purchases restored", purchases);
-      } catch (e) {
-        console.error("[PiAuth] Failed to restore purchases:", e);
-        setRestoredPurchases([]);
+      if (!sdkInstance && !legacyAuthOk) {
+        throw new Error("Pi authentication unavailable — open the app inside Pi App Studio or the Pi Browser");
+      }
+
+      setIsAuthenticated(true);
+      console.log("[PiAuth] Authentication successful:", {
+        sdkLite: !!sdkInstance,
+        legacyV2: legacyAuthOk,
+        appId: PI_NETWORK_CONFIG.APP_ID,
+        origin: typeof window !== "undefined" ? window.location.origin : "N/A",
+      });
+
+      if (sdkInstance) {
+        try {
+          await fetchProducts(sdkInstance);
+        } catch (productsError) {
+          console.error("[PiAuth] Failed to load products:", productsError);
+        }
+        try {
+          const { purchases } = await sdkInstance.state.restore();
+          setRestoredPurchases(purchases);
+          console.log("[PiAuth] Purchases restored", purchases);
+        } catch (e) {
+          console.error("[PiAuth] Failed to restore purchases:", e);
+          setRestoredPurchases([]);
+        }
       }
     } catch (err) {
       const piInstance = (window as any).Pi;

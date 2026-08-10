@@ -3,7 +3,7 @@
 import { useFarm } from "@/contexts/farm-context"
 import { EXPANDED_LAND_TIERS } from "@/lib/farm-types"
 import { usePurchase } from "@/lib/pi-payment"
-import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
+import { payWithPi } from "@/lib/pi-direct-payment"
 import { getVisualAnimationClass, getVisualAnimationStyle } from "@/lib/visual-animation"
 import { useState } from "react"
 
@@ -34,14 +34,13 @@ const handleLease = async (tierId: string, costPi: number) => {
     }
     setBusy(tierId)
     try {
-      // Direct Pi payment using the actual cost for this land tier
       const tier = EXPANDED_LAND_TIERS.find((t) => t.id === tierId)
-      const uid = await getPiUid()
+      // لا await قبل استدعاء الدفع — payWithPi يفتح واجهة الدفع في نفس لحظة الضغطة
       await payWithPi({
+        productSlug: `land_tier_${tierId}`,
         amount: costPi,
         memo: `استئجار أرض - ${tier?.name || tierId}`,
         metadata: { tierId, action: "land_lease" },
-        uid,
       })
       leaseLand(tierId)
     } catch (e) {

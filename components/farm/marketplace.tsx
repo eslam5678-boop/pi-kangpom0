@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useFarm } from "@/contexts/farm-context"
 import { ASSETS, assetDef } from "@/lib/farm-types"
 import { usePurchase } from "@/lib/pi-payment"
-import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
+import { payWithPi } from "@/lib/pi-direct-payment"
 import { getVisualAnimationClass, getVisualAnimationStyle } from "@/lib/visual-animation"
 import { ShaheenCaptcha } from "./shaheen-captcha"
 
@@ -43,12 +43,12 @@ const handleUnlockService = async (service: (typeof premiumServices)[number]) =>
     if (state.unlockedServices?.includes(service.id)) return
     setUnlockingService(service.id)
     try {
-      const uid = await getPiUid()
+      // لا await قبل استدعاء الدفع — payWithPi يفتح واجهة الدفع في نفس لحظة الضغطة
       await payWithPi({
+        productSlug: `service_${service.id}`,
         amount: service.pricePi,
         memo: `فتح خدمة ${service.title}`,
         metadata: { serviceId: service.id, action: "unlock_service" },
-        uid,
       })
       unlockService(service.id)
       showToast(`تم فتح ${service.title} بنجاح`)

@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useFarm } from "@/contexts/farm-context"
 import { assetDef, type OwnedAsset } from "@/lib/farm-types"
 import { usePurchase, useAds } from "@/lib/pi-payment"
-import { payWithPi, getPiUid } from "@/lib/pi-direct-payment"
+import { payWithPi } from "@/lib/pi-direct-payment"
 
 // تعريف الثوابت محلياً لتجنب مشاكل التصدير من ملف الأنواع
 const REVIVE_ADS_REQUIRED = 3
@@ -56,8 +56,9 @@ const handlePay = async () => {
     setBusy(true)
     setError("")
     try {
-      const uid = await getPiUid()
+      // لا await قبل استدعاء الدفع — payWithPi يفتح واجهة الدفع في نفس لحظة الضغطة
       await payWithPi({
+        productSlug: LIFELINE_PRODUCT_ID,
         amount: REVIVE_PI_COST,
         memo: LIFELINE_MEMO,
         metadata: {
@@ -67,7 +68,6 @@ const handlePay = async () => {
           product: LIFELINE_PRODUCT_ID,
           amount: REVIVE_PI_COST,
         },
-        uid,
       })
       reviveAsset(asset.uid)
       onClose()

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { payWithPi, getPiUid } from "@/lib/pi-direct-payment";
+import { payWithPi } from "@/lib/pi-direct-payment";
 
 interface P2PItem {
   id: string;
@@ -25,13 +25,12 @@ export default function MarketplaceArchitecture() {
     setError(null);
     try {
       const fee = (item.pricePi * 0.02).toFixed(3); // عمولة 2%
-      // فتح محفظة Pi عبر Pi.createPayment لتحويل المبلغ في نظام الضمان (Escrow)
-      const uid = await getPiUid();
+      // لا await قبل استدعاء الدفع — payWithPi يفتح واجهة الدفع في نفس لحظة الضغطة
       await payWithPi({
+        productSlug: `p2p_${item.id}`,
         amount: item.pricePi,
         memo: `شراء ${item.itemName} من ${item.seller} (ضمان، عمولة ${fee} Pi)`,
         metadata: { listingId: item.id, seller: item.seller, action: "p2p_escrow" },
-        uid,
       });
       // لا تُحذف القائمة إلا بعد نجاح الدفع فعلياً
       setP2pListings((prev) => prev.filter((i) => i.id !== item.id));

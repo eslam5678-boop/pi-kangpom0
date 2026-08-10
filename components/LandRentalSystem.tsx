@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { payWithPi, getPiUid } from "@/lib/pi-direct-payment";
+import { payWithPi } from "@/lib/pi-direct-payment";
 
 export interface LandTier {
   id: string;
@@ -37,14 +37,13 @@ export default function LandRentalSystem() {
     setBusy(id);
     setError(null);
     try {
-      // فتح محفظة Pi عبر Pi.createPayment (المدفوعات الحقيقية عبر /api/auth/pi)
+      // لا await قبل استدعاء الدفع — payWithPi يفتح واجهة الدفع في نفس لحظة الضغطة
       const land = lands.find((l) => l.id === id);
-      const uid = await getPiUid();
       await payWithPi({
+        productSlug: `land_rent_${id}`,
         amount: price,
         memo: `استئجار أرض - ${land?.name || id}`,
         metadata: { landId: id, action: "land_lease" },
-        uid,
       });
 
       // لا يتم تفعيل العقد إلا بعد نجاح الدفع فعلياً

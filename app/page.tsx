@@ -6,7 +6,7 @@ import { GAME_ASSETS, LAND_CONTRACTS } from '../lib/gameData';
 import { PlacedItem, PlayerStats, ProductionRecipe } from './types';
 import RoyalMarketModal from '../components/farm/royal-market-modal';
 import { usePiAuth } from '../contexts/auth-context';
-import { getPiUid } from '../lib/pi-direct-payment';
+import { payWithPi, getCachedPiUid } from '../lib/pi-direct-payment';
 
 // 1. تصحيح مسارات الاستيراد للمكونات والأدوات بناءً على هيكل المجلدات لديك
 import PharaonicSplashScreen from "../components/PharaonicSplashScreen";
@@ -539,26 +539,8 @@ useEffect(() => {
   }, []);
 
   // ==========================================
-  // Pi SDK Payment Support (safe initialization)
+  // Pi SDK Payment Support (initialize once, in auth-context)
   // ==========================================
-  useEffect(() => {
-    try {
-      const pi = (window as any)?.Pi;
-      if (pi && typeof pi.init === "function") {
-        pi.init({ version: "2.0", sandbox: true })
-          .then(() => {
-            console.log("[PiPay] Pi.init({ version: '2.0', sandbox: true }) succeeded");
-          })
-          .catch((err: unknown) => {
-            console.warn("[PiPay] Pi.init() failed (non-fatal):", err);
-          });
-      } else {
-        console.warn("[PiPay] window.Pi not available for init");
-      }
-    } catch (e) {
-      console.warn("[PiPay] Pi SDK init skipped:", e);
-    }
-  }, []);
 
   const playSound = (type: 'harvest' | 'place' | 'click' | 'error' | 'coin' | 'water') => {
     try {
@@ -626,73 +608,38 @@ useEffect(() => {
     memo: string,
     metadata: Record<string, unknown>,
     onComplete?: () => void,
-    onFail?: (msg: string) => void
+    onFail?: (msg: string) => void,
+    productSlug?: string
   ) => {
     try {
-      const pi = (window as any)?.Pi;
-      if (!pi || typeof pi.createPayment !== "function") {
-        const msg = "Pi Wallet غير متاح حاليًا. تأكد من فتح اللعبة داخل تطبيق Pi Browser.";
-        console.error("[PiPay] createPayment unavailable:", !!pi);
-        playSound("error");
-        onFail ? onFail(msg) : alert(msg);
-        return;
-      }
-
-      const uid = await getPiUid();
-      const paymentData: any = {
+      // NO await before this call: authentication happened at app entry and the
+      // uid is read synchronously from the cache, so the Pi payment UI opens in
+      // the SAME tick as the click.
+      const result = await payWithPi({
+        productSlug: productSlug || (metadata?.productId as string) || (metadata?.product as string),
         amount,
         memo: memo || "Pi Kingdom Farm purchase",
-        metadata: metadata || {},
-      };
-      if (uid) paymentData.uid = uid;
+        metadata,
+        uid: getCachedPiUid(),
+      });
 
-      console.log("[PiPay] Calling Pi.createPayment", paymentData);
-
-      pi.createPayment(
-        paymentData,
-        {
-          onReadyForServerApproval: async (paymentId: string) => {
-            console.log("[PiPay] onReadyForServerApproval", paymentId);
-            try {
-              await fetch("/api/auth/pi", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "approve", paymentId }),
-              });
-            } catch (approveErr) {
-              console.error("[PiPay] Approve failed (continuing to completion):", approveErr);
-            }
-          },
-          onReadyForServerCompletion: async (paymentId: string, txid: string) => {
-            console.log("[PiPay] onReadyForServerCompletion", paymentId, txid);
-            try {
-              await fetch("/api/auth/pi", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "complete", paymentId, txid }),
-              });
-              playSound("coin");
-              triggerFloatingText(`+${amount} Pi 💜 تم الدفع بنجاح!`, "text-purple-300");
-              if (onComplete) onComplete();
-            } catch (completeErr) {
-              console.error("[PiPay] Complete call failed:", completeErr);
-              if (onFail) onFail("فشل إتمام الدفع على الخادم.");
-            }
-          },
-          onCancel: (paymentId: string) => {
-            console.log("[PiPay] onCancel", paymentId);
-            if (onFail) onFail("تم إلغاء الدفع من قبل المستخدم.");
-          },
-          onError: (error: Error, payment?: unknown) => {
-            console.error("[PiPay] onError", error, payment);
-            if (onFail) onFail(error?.message || "خطأ غير متوقع أثناء الدفع.");
-          },
-        }
-      );
-    } catch (e) {
+      playSound("coin");
+      triggerFloatingText(`+${amount} Pi 💜 تم الدفع بنجاح!`, "text-purple-300");
+      if (onComplete) onComplete();
+    } catch (e: any) {
       console.error("[PiPay] handlePiPayment error:", e);
       playSound("error");
-      if (onFail) onFail("تعذر بدء الدفع عبر Pi Wallet.");
+      let msg = "تعذر بدء الدفع عبر محفظة باي.";
+      if (e?.code === "purchase_cancelled") {
+        msg = "تم إلغاء الدفع من قبل المستخدم.";
+      } else if (e?.code === "product_not_found") {
+        msg = "المنتج غير مضاف في كتالوج App Studio. أضف المنتج أولًا ثم أعد المحاولة.";
+      } else if (e?.code === "pi_payment_unavailable") {
+        msg = "الدفع غير متاح في هذه البيئة — افتح اللعبة داخل Pi App Studio أو Pi Browser.";
+      } else if (e?.message && typeof e.message === "string") {
+        msg = `تعذر إتمام الدفع (${e.message}).`;
+      }
+      if (onFail) onFail(msg); else alert(msg);
     }
   };
 
