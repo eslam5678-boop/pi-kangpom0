@@ -359,6 +359,28 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
       // is forced to show the permissions prompt again and grant the scopes.
       clearPiAuthState();
 
+      // Reset any stale Pi SDK session before requesting the scopes again.
+      // The Pi Browser SDK caches auth server-side and can silently reuse a
+      // previously cached session that lacks the "payments" scope, skipping
+      // the permissions screen and making Pi.createPayment() fail with
+      // "Cannot create a payment without payments scope". Clearing localStorage
+      // alone cannot invalidate that cached session. Reset it using the same
+      // Pi.signOut() method already used by logout() in this file, so the
+      // Pi.authenticate() call below re-runs the permissions prompt.
+      if (piInstance && typeof piInstance.signOut === "function") {
+        try {
+          const signOutResult = piInstance.signOut();
+          if (signOutResult && typeof signOutResult.then === "function") {
+            await signOutResult;
+          }
+          console.log("[PiAuth] Stale Pi SDK session reset via Pi.signOut()");
+        } catch (signOutError) {
+          console.error("[PiAuth] Pi.signOut() failed (non-fatal):", signOutError);
+        }
+      } else {
+        console.log("[PiAuth] window.Pi.signOut not available — proceeding without session reset");
+      }
+
       setAuthMessage("Authenticating with Pi Network...");
 
       // Strictly request the scopes required for payments. The Pi SDK v2 expects
