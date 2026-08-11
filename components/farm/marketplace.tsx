@@ -52,9 +52,13 @@ const handleUnlockService = async (service: (typeof premiumServices)[number]) =>
       })
       unlockService(service.id)
       showToast(`تم فتح ${service.title} بنجاح`)
-    } catch (error) {
+    } catch (error: any) {
       console.log("[v0] premium service unlock failed", error)
-      showToast("تعذر فتح الخدمة حالياً")
+      showToast(
+        error?.message && typeof error.message === "string"
+          ? error.message
+          : "تعذر فتح الخدمة حالياً"
+      )
     } finally {
       setUnlockingService(null)
     }

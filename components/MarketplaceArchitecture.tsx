@@ -34,9 +34,13 @@ export default function MarketplaceArchitecture() {
       });
       // لا تُحذف القائمة إلا بعد نجاح الدفع فعلياً
       setP2pListings((prev) => prev.filter((i) => i.id !== item.id));
-    } catch (e) {
+    } catch (e: any) {
       console.error("[MarketplaceArchitecture] P2P payment failed:", e);
-      setError("تعذّر إتمام الدفع عبر محفظة باي لنظام الضمان. حاول مجدداً.");
+      setError(
+        e?.message && typeof e.message === "string"
+          ? e.message
+          : "تعذّر إتمام الدفع عبر محفظة باي لنظام الضمان. حاول مجدداً."
+      );
     } finally {
       setBusyId(null);
     }

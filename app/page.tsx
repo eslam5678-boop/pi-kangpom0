@@ -735,6 +735,10 @@ useEffect(() => {
         msg = "المنتج غير مضاف في كتالوج App Studio. أضف المنتج أولًا ثم أعد المحاولة.";
       } else if (e?.code === "pi_payment_unavailable") {
         msg = "الدفع غير متاح في هذه البيئة — افتح اللعبة داخل Pi App Studio أو Pi Browser.";
+      } else if (e?.code === "payments_scope_missing" || e?.code === "pi_environment_missing") {
+        msg = e?.message && typeof e.message === "string"
+          ? e.message
+          : "الدفع يحتاج فتح اللعبة داخل Pi Browser ومنح صلاحيات الدفع.";
       } else if (e?.message && typeof e.message === "string") {
         msg = `تعذر إتمام الدفع (${e.message}).`;
       }

@@ -99,6 +99,9 @@ interface PiSDK {
     getMe?: () => Promise<{ uid?: string; username?: string }>;
   };
   init?: (config: { version: string; sandbox?: boolean }) => Promise<void>;
+  signOut?: () => void | Promise<void>;
+  authenticated?: boolean;
+  consentedScopes?: string[];
 }
 
 /**
@@ -255,6 +258,28 @@ async function purchaseWithSdklite(
   };
 }
 
+/** يرمي خطأ بحمل رسالة عربية واضحة للمستخدم + كود برمجي للمعالجة. */
+function throwPiError(code: string, message: string): never {
+  const err = new Error(message);
+  (err as { code?: string }).code = code;
+  throw err;
+}
+
+/**
+ * هل يمكن استخدام مسار Pi.createPayment القديم بأمان؟
+ * شرط صارم: تسجيل دخول + صلاحية "payments" موجودة في consentedScopes.
+ * لو مش كده، ممنوع نهائيًا استدعاء createPayment.
+ */
+function canUseLegacy(pi: PiSDK | undefined): boolean {
+  return (
+    !!pi &&
+    typeof pi.createPayment === "function" &&
+    pi.authenticated === true &&
+    Array.isArray(pi.consentedScopes) &&
+    pi.consentedScopes.includes("payments")
+  );
+}
+
 /**
  * Unified payment entry point — call this as the FIRST statement inside your
  * click handler with NO await before it.
@@ -263,11 +288,14 @@ async function purchaseWithSdklite(
  * synchronously, and this function invokes the appropriate Pi API in the SAME
  * user-gesture tick:
  *
- *   1. SDKLite `makePurchase`    → Pi App Studio (product catalog).
- *   2. Legacy `Pi.createPayment` → Pi Browser classic apps.
+ *   1. SDKLite `makePurchase`    → Pi App Studio (product catalog) — ONLY path in App Studio.
+ *   2. Legacy `Pi.createPayment` → Pi Browser classic apps — only after a strict
+ *      check that the user is authenticated WITH the "payments" scope.
  *
  * Resolves on server-side completion; rejects with a normalized Error carrying
- * a stable `code`: `purchase_cancelled` | `product_not_found` | `pi_sdk_unavailable`.
+ * a stable `code` and a clear Arabic user-facing message:
+ *   `purchase_cancelled` | `product_not_found` | `payments_scope_missing`
+ *   | `pi_environment_missing` | `pi_payment_unavailable`
  */
 export async function payWithPi(data: PiPaymentData): Promise<PiPaymentResult> {
   if (typeof window === "undefined") {
@@ -286,42 +314,76 @@ export async function payWithPi(data: PiPaymentData): Promise<PiPaymentResult> {
   const sdk = getPiSdk();
   const pi = getWindowPi();
 
-  // 1) Pi App Studio path (SDKLite owns payments there).
+  // ------------------------------------------------------------
+  // 0) لا توجد أي وسيلة دفع في هذه البيئة إطلاقًا
+  // ------------------------------------------------------------
+  if (!sdk && !pi) {
+    throwPiError(
+      "pi_payment_unavailable",
+      "الدفع غير متاح في هذه البيئة. افتح اللعبة داخل Pi App Studio أو داخل تطبيق Pi Browser على الموبايل."
+    );
+  }
+
+  // ------------------------------------------------------------
+  // 1) App Studio — مسار SDKLite حصرًا (لا نقترب من Pi.createPayment هنا)
+  //    ملاحظة: SDKLite داخليًا بيحتاج window.Pi — لو غير موجود نعرض رسالة واضحة
+  //    بدل انهيار "Pi is not defined".
+  // ------------------------------------------------------------
   if (sdk && data.productSlug) {
+    if (!pi) {
+      throwPiError(
+        "pi_environment_missing",
+        "بيئة App Studio التجريبية الحالية لا توفر نافذة محفظة باي (window.Pi غير موجود). لاختبار الدفع الفعلي افتح التطبيق داخل تطبيق Pi Browser على الموبايل."
+      );
+    }
     try {
       return await purchaseWithSdklite(sdk, data.productSlug);
     } catch (e) {
+      if (/Pi is not defined|is not defined/i.test(String(e))) {
+        throwPiError(
+          "pi_environment_missing",
+          "بيئة App Studio الحالية لا توفر محفظة باي (window.Pi غير موجود) — افتح اللعبة داخل Pi Browser على الموبايل لاختبار الدفع الفعلي."
+        );
+      }
       const code = (e as { code?: string })?.code;
       const isMissingProduct =
         (e as { name?: string })?.name === "SDKLiteError" && code === "product_not_found";
-      // Only fall back to the legacy path when this environment can also use it.
-      if (!isMissingProduct || !pi || typeof pi.createPayment !== "function") {
+      // الخريف الوحيد هو الـ legacy بشرط وجود session + صلاحية payments — غير كده خطأ واضح.
+      if (!isMissingProduct || !canUseLegacy(pi)) {
         throw normalizePiError(e);
       }
       console.warn("[PiPay] SDKLite product not found; falling back to legacy Pi.createPayment");
     }
   }
 
-  // 2) Pi Browser path (legacy v2 SDK).
+  // ------------------------------------------------------------
+  // 2) Pi Browser — مسار Pi.createPayment مع فحص صارم قبل الاستدعاء
+  // ------------------------------------------------------------
   if (pi && typeof pi.createPayment === "function") {
+    if (pi.authenticated !== true) {
+      throwPiError(
+        "payments_scope_missing",
+        "لم يتم تسجيل الدخول إلى باي — داخل المتصفح الخارجي اللعبة شغالة كضيف. افتح اللعبة داخل تطبيق Pi Browser ووافق على صلاحيات الدفع ثم أعد المحاولة."
+      );
+    }
+    if (!Array.isArray(pi.consentedScopes) || !pi.consentedScopes.includes("payments")) {
+      throwPiError(
+        "payments_scope_missing",
+        "لم يتم منح صلاحية الدفع (payments) بعد. وافق على صلاحية الدفع من شاشة باي ثم أعد المحاولة."
+      );
+    }
     return createLegacyPayment(pi, paymentData);
   }
 
-  // 3) Nothing available in this environment.
+  // ------------------------------------------------------------
+  // 3) أي حالة أخرى
+  // ------------------------------------------------------------
   const isPiBrowser =
     typeof navigator !== "undefined" &&
     /pi\s*browser|pibrowser/i.test(navigator.userAgent || "");
   const sdkScriptLoaded = !!document.querySelector(
     'script[src*="sdk.minepi.com"], script[src*="pi-sdk.js"]'
   );
-  const err = new Error(
-    "Pi payment unavailable." +
-      (sdk ? "" : " SDKLite missing.") +
-      (pi ? "" : " Pi SDK missing.") +
-      (isPiBrowser ? " (Pi Browser detected)" : " (not in Pi Browser)") +
-      (sdkScriptLoaded ? " - SDK script found in DOM" : " - SDK script NOT found in DOM")
-  );
-  (err as { code?: string }).code = "pi_payment_unavailable";
   console.error("[PiPay] No payment method available in this environment.", {
     sdkAvailable: !!sdk,
     piAvailable: !!pi,
@@ -329,7 +391,10 @@ export async function payWithPi(data: PiPaymentData): Promise<PiPaymentResult> {
     isPiBrowser,
     sdkScriptLoaded,
   });
-  throw err;
+  throwPiError(
+    "pi_payment_unavailable",
+    "لا توجد طريقة دفع متاحة في هذه البيئة — افتح اللعبة داخل Pi App Studio أو Pi Browser."
+  );
 }
 
 /** Minimal reference type for the payment object (kept for clarity). */

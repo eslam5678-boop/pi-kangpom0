@@ -71,9 +71,13 @@ const handlePay = async () => {
       })
       reviveAsset(asset.uid)
       onClose()
-    } catch (e) {
+    } catch (e: any) {
       console.log("[v0] revive payment failed", e)
-      setError("تعذّر إتمام الدفع عبر باي. حاول مجدداً.")
+      setError(
+        e?.message && typeof e.message === "string"
+          ? e.message
+          : "تعذّر إتمام الدفع عبر باي. حاول مجدداً."
+      )
     } finally {
       setBusy(false)
     }
