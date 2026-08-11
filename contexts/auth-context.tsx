@@ -190,9 +190,31 @@ interface PiAuthContextType {
   user: { username: string; id: string; roles?: string[] } | null;
   login: () => Promise<void>;
   logout: () => void;
+  /** الدخول كضيف بدون جلسة باي — بعد فشل المصادقة */
+  continueAsGuest: () => void;
 }
 
 const PiAuthContext = createContext<PiAuthContextType | undefined>(undefined);
+
+/** أقصى مهلة لأي عملية Pi — يمنع تعليق شاشة التحميل لـ 120+ ثانية. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 const loadPiSDK = (): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -309,17 +331,21 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
       // registered with payWithPi() for sdk.makePurchase(productSlug).
       // ------------------------------------------------------------
       let sdkInstance: any = null;
+
+      const insideAppStudio = isInIframe();
+      pushDiag(insideAppStudio ? "البيئة: داخل App Studio iframe 🟣" : "البيئة: نافذة مستقلة (Pi Browser/ويب)");
+
       try {
         setAuthMessage("Loading SDKLite...");
-        await loadSDKLite();
+        await withTimeout(loadSDKLite(), 8000, "loadSDKLite");
         setAuthMessage("Initializing SDKLite...");
-        sdkInstance = await (window as any).SDKLite.init();
+        sdkInstance = await withTimeout((window as any).SDKLite.init(), 8000, "SDKLite.init");
         setPiSdk(sdkInstance);
         setSdk(sdkInstance);
         console.log("[PiAuth] SDKLite initialized");
         pushDiag("SDKLite.init نجح — مسار App Studio جاهز ✅");
       } catch (sdkErr: any) {
-        console.warn("[PiAuth] SDKLite init failed (non-fatal in Pi Browser mode):", sdkErr);
+        console.warn("[PiAuth] SDKLite init failed (non-fatal):", sdkErr);
         pushDiag(`SDKLite.init فشل ❌: ${sdkErr?.message || String(sdkErr)}`);
       }
 
@@ -331,9 +357,16 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
       // ------------------------------------------------------------
       let legacyAuthOk = false;
       try {
-        setAuthMessage("Loading Pi SDK...");
-        await loadPiSDK();
-        setAuthMessage("Initializing Pi Network...");
+        if (insideAppStudio) {
+          // داخل App Studio (iframe) لا نحمّل/نستدعي pi-sdk القديم: جسر
+          // postMessage الخاص بـ Pi Browser بيعلق 120 ثانية وبيسبب origin
+          // mismatch. App Studio يوفّر window.Pi الخاص به وSDKLite يتكفل
+          // بالمصادقة والدفع وقت الطلب.
+          pushDiag("تخطي Pi SDK v2 القديم داخل App Studio ✅");
+        } else {
+          setAuthMessage("Loading Pi SDK...");
+          await withTimeout(loadPiSDK(), 8000, "loadPiSDK");
+          setAuthMessage("Initializing Pi Network...");
         const piInstance = (window as any).Pi;
         console.log("[PiAuth] Pi.init() config:", {
           version: "2.0",
@@ -343,11 +376,15 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
           piAppId: typeof window !== "undefined" ? (piInstance as any)?.getAppId?.() : "N/A",
         });
         if (piInstance && typeof piInstance.init === "function") {
-          await piInstance.init({
-            version: "2.0",
-            sandbox: PI_NETWORK_CONFIG.SANDBOX,
-            appId: PI_NETWORK_CONFIG.APP_ID,
-          });
+          await withTimeout(
+            piInstance.init({
+              version: "2.0",
+              sandbox: PI_NETWORK_CONFIG.SANDBOX,
+              appId: PI_NETWORK_CONFIG.APP_ID,
+            }),
+            8000,
+            "Pi.init"
+          );
           console.log("[PiAuth] Pi.init() succeeded, appId:", (piInstance as any)?.getAppId?.() ?? "N/A");
           pushDiag("Pi.init نجح ✅ (window.Pi متاح)");
         }
@@ -403,7 +440,11 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
               }
             }
             setAuthMessage("Authenticating with Pi Network...");
-            const authResult = await piInstance.authenticate(piScopes, onIncompletePayment);
+            const authResult: { accessToken?: string } | undefined = await withTimeout(
+              piInstance.authenticate(piScopes, onIncompletePayment) as Promise<{ accessToken?: string }>,
+              8000,
+              "Pi.authenticate"
+            );
             if (!authResult?.accessToken) {
               throw new Error("Pi Network authentication failed - no access token returned");
             }
@@ -439,6 +480,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
             }
           }
         }
+        } // نهاية else — وضع غير iframe
       } catch (legacyErr: any) {
         console.warn("[PiAuth] Legacy Pi v2 init/authenticate failed (non-fatal):", legacyErr);
         pushDiag(`Pi v2 (Pi Browser) فشل ❌: ${legacyErr?.message || String(legacyErr)}`);
@@ -603,6 +645,16 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
     }
   };
 
+  const continueAsGuest = () => {
+    console.log("[PiAuth] Continuing as guest (no Pi session)");
+    setHasError(false);
+    setIsAuthenticated(true);
+    setAuthMessage("وضع ضيف — بدون باي");
+    setUser({ username: "ضيف", id: "guest-" + Math.random().toString(36).slice(2, 9) });
+    pushDiag("المتابعة كضيف — بدون باي");
+    setIsLoading(false);
+  };
+
   const value: PiAuthContextType = {
     isAuthenticated,
     authMessage,
@@ -619,6 +671,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
     },
     login: initialize,
     logout,
+    continueAsGuest,
   };
 
   return (

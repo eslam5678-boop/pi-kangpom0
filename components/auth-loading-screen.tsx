@@ -3,7 +3,7 @@
 import { usePiAuth } from "@/contexts/auth-context";
 
 export function AuthLoadingScreen() {
-  const { authMessage, hasError, reinitialize, isLoading } = usePiAuth();
+  const { authMessage, hasError, reinitialize, isLoading, continueAsGuest } = usePiAuth();
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
@@ -50,12 +50,22 @@ export function AuthLoadingScreen() {
         </div>
 
         {hasError && (
-          <button
-            onClick={reinitialize}
-            className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
-          >
-            Retry Authentication
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={reinitialize}
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
+            >
+              Retry Authentication
+            </button>
+            {typeof continueAsGuest === "function" && (
+              <button
+                onClick={continueAsGuest}
+                className="px-6 py-3 bg-muted text-muted-foreground rounded-lg hover:bg-accent transition-colors font-medium"
+              >
+                المتابعة كضيف (بدون باي)
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

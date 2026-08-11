@@ -36,7 +36,7 @@ export default function PharaonicSplashScreen({ onLoadingComplete }: SplashScree
         isFading ? "opacity-0 pointer-events-none" : "opacity-100"
       }`}
       style={{
-        backgroundImage: `linear-gradient(rgba(30, 10, 40, 0.65), rgba(15, 5, 20, 0.85)), url('/kingdom-farm (1)_4.jpg')`,
+        backgroundImage: `linear-gradient(rgba(30, 10, 40, 0.65), rgba(15, 5, 20, 0.85)), url('/kingdom-farm.jpg')`,
         backgroundSize: "cover",
         backgroundPosition: "center",
         backgroundColor: "#1a0826", // خلفية أرجوانية ملكية احتياطية

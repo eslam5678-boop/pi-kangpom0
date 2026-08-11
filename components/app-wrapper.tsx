@@ -8,10 +8,16 @@ import { AuthLoadingScreen } from "./auth-loading-screen";
 const ENABLE_DEV_MODE = false;
 
 function AppContent({ children }: { children: ReactNode }) {
-  const { isLoading  } = usePiAuth();
+  const { isLoading, hasError, isAuthenticated } = usePiAuth();
 
   // إذا كان التطبيق ما زال يحمل بيانات Pi، اعرض شاشة التحميل
-  if (isLoading ) {
+  if (isLoading) {
+    return <AuthLoadingScreen />;
+  }
+
+  // لو فشلت المصادقة ولم يكتمل الدخول، اعرض شاشة الخطأ مع إعادة المحاولة
+  // أو "المتابعة كضيف" بدل الدخول إلى اللعبة بصمت.
+  if (hasError && !isAuthenticated) {
     return <AuthLoadingScreen />;
   }
 

@@ -228,15 +228,22 @@ async function purchaseWithSdklite(
   sdk: unknown,
   productSlug: string
 ): Promise<PiPaymentResult> {
-  const makePurchase = (sdk as {
+  const sdklite = sdk as {
     makePurchase: (slug: string) => Promise<{
       ok: boolean;
       paymentId: string;
       txid: string;
       productId?: string;
     }>;
-  }).makePurchase;
-  const result = await makePurchase(productSlug);
+  };
+  if (!sdklite || typeof sdklite.makePurchase !== "function") {
+    const err = new Error("SDKLite makePurchase is unavailable");
+    (err as { code?: string }).code = "pi_sdk_unavailable";
+    throw err;
+  }
+  // مهم: استدعاء كطريقة على الكائن نفسه (method call) للحفاظ على `this`
+  // جوه SDKLite — لو استدعيناها "منفصلة" بتبقى this=undefined فيكسر login().
+  const result = await sdklite.makePurchase(productSlug);
   if (!result || !result.ok) {
     throw new Error(`SDKLite purchase failed for product '${productSlug}'`);
   }
