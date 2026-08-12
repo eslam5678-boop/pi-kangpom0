@@ -1,6 +1,5 @@
 import React from "react";
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 
@@ -8,6 +7,7 @@ import "./globals.css";
 
 import { AppWrapper } from "../components/app-wrapper";
 import { ErrorBoundary } from "../components/error-boundary";
+import { PiSdkScript } from "../components/pi-sdk-script";
 
 export const metadata: Metadata = {
   title: "إمبراطورية باي الفرعونية - Pi Kingdom Farm",
@@ -46,11 +46,7 @@ export default function RootLayout({
         className="min-h-screen bg-background text-white antialiased"
       >
         {/* سكريبت Pi SDK الرسمي — يُحمَّل قبل أي كود تطبيق حتى يكون window.Pi جاهزًا */}
-        <Script
-          src="https://sdk.minepi.com/pi-sdk.js"
-          strategy="beforeInteractive"
-          onError={(e) => console.warn("[PiSDK] Official pi-sdk.js failed to load", e)}
-        />
+        <PiSdkScript />
         <ErrorBoundary>
           <AppWrapper>{children}</AppWrapper>
         </ErrorBoundary>
