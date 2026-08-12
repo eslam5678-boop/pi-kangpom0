@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react"
 import { useFarm } from "@/contexts/farm-context"
 import { useTimeTheme } from "@/hooks/use-time-theme"
+import { usePanZoom } from "@/hooks/use-pan-zoom"
 import { RoyalKitchenOverlay } from "./royal-kitchen-overlay"
 import { ASSETS } from "@/lib/farm-types"
 
@@ -35,6 +36,20 @@ export function IsometricGameGrid() {
   const isDaytime = useTimeTheme()
   const [showKitchen, setShowKitchen] = useState(false)
   const [dayNightCycle, setDayNightCycle] = useState<"day" | "night">(isDaytime ? "day" : "night")
+
+  // Pan / zoom controller for the game field (touch pinch + drag, mouse wheel + drag).
+  const {
+    viewportRef,
+    layerRef,
+    scale,
+    canZoomIn,
+    canZoomOut,
+    isZoomed,
+    zoomIn,
+    zoomOut,
+    resetView,
+    suppressClick,
+  } = usePanZoom({ minScale: 0.7, maxScale: 3.5, initialScale: 1 })
 
   // Initialize tiles from localStorage or create new
   const [tiles, setTiles] = useState<MapTile[]>(() => {
@@ -150,23 +165,28 @@ export function IsometricGameGrid() {
     const tileHeight = 40
     const offsetX = (x - y) * (tileWidth / 2)
     const offsetY = (x + y) * (tileHeight / 2)
+    const BASE_X = 180 // centre the isometric map within the pan/zoom layer
+    const BASE_Y = 50
     return {
-      transform: `translate(${offsetX}px, ${offsetY}px)`,
+      transform: `translate(${BASE_X + offsetX}px, ${BASE_Y + offsetY}px)`,
     }
   }
 
+  // The pan/zoom layer. Sized a bit larger than the visible map so every tile has breathing
+  // room while panning. It is translated/scaled by the usePanZoom hook.
   const gridStyle: React.CSSProperties = {
-    position: "relative",
-    width: "360px",
-    height: "360px",
-    margin: "0 auto",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 440,
+    height: 300,
   }
 
   const readyCount = tiles.filter((t) => t.status === "ready").length
   const plantedCount = tiles.filter((t) => t.status === "planted").length
 
   return (
-    <div className="space-y-4 relative">
+    <div className="flex flex-col h-full gap-3 relative">
       {/* Day/Night Overlay */}
       <div
         className={`day-night-overlay ${dayNightCycle}`}
@@ -174,7 +194,7 @@ export function IsometricGameGrid() {
       />
 
       {/* Header with Kitchen Button */}
-      <div className="bg-card border-2 border-primary rounded-xl p-3 flex items-center justify-between">
+      <div className="shrink-0 bg-card border-2 border-primary rounded-xl p-3 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-primary text-glow-gold">مزرعة الفرعون</h2>
           <p className="text-[10px] text-muted-foreground">
@@ -190,7 +210,7 @@ export function IsometricGameGrid() {
       </div>
 
       {/* Status Bar */}
-      <div className="bg-gradient-to-r from-card to-background border-2 border-primary rounded-xl p-4">
+      <div className="shrink-0 bg-gradient-to-r from-card to-background border-2 border-primary rounded-xl p-3">
         <div className="grid grid-cols-3 gap-4 text-center">
           <div className="flex flex-col items-center gap-1">
             <span className="text-xs text-muted-foreground uppercase font-bold">الرصيد</span>
@@ -223,7 +243,7 @@ export function IsometricGameGrid() {
 
       {/* Crop Status */}
       {(readyCount > 0 || plantedCount > 0) && (
-        <div className="bg-background/60 border-2 border-primary/50 rounded-lg p-3 flex justify-around text-center backdrop-blur-sm">
+        <div className="shrink-0 bg-background/60 border-2 border-primary/50 rounded-lg p-3 flex justify-around text-center backdrop-blur-sm">
           {plantedCount > 0 && (
             <div>
               <p className="text-[10px] text-muted-foreground font-bold">ينمو</p>
@@ -239,9 +259,20 @@ export function IsometricGameGrid() {
         </div>
       )}
 
-      {/* Isometric Grid with Oasis Background */}
-      <div className="oasis-bg bg-gradient-to-b from-card to-background border-2 border-primary rounded-2xl p-8 overflow-hidden relative">
-        <div style={gridStyle}>
+      {/* Game Field — responsive pan/zoom viewport */}
+      <div
+        ref={viewportRef}
+        onClickCapture={(e) => {
+          // Drop a click right after a pan/pinch/wheel so a drag doesn't tap a tile.
+          if (suppressClick.current) {
+            e.preventDefault()
+            e.stopPropagation()
+            suppressClick.current = false
+          }
+        }}
+        className="game-field-viewport oasis-bg bg-gradient-to-b from-card to-background border-2 border-primary rounded-2xl flex-1 min-h-[240px]"
+      >
+        <div ref={layerRef} className="pan-zoom-layer" style={gridStyle}>
           {tiles.map((tile) => {
             const isometricStyle = getIsometricStyle(tile.x, tile.y)
             const growthPct = getGrowthPercentage(tile)
@@ -289,10 +320,55 @@ export function IsometricGameGrid() {
             )
           })}
         </div>
+
+        {/* Zoom controls (do not trigger pan/zoom gestures) */}
+        <div dir="ltr" className="absolute top-2 right-2 z-30 flex flex-col gap-2">
+          <button
+            type="button"
+            data-pan-zoom-control
+            aria-label="Zoom in"
+            onClick={zoomIn}
+            disabled={!canZoomIn}
+            className="w-10 h-10 rounded-xl bg-background/80 border border-primary/50 text-primary font-bold text-xl flex items-center justify-center active:scale-90 transition-transform disabled:opacity-40"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            data-pan-zoom-control
+            aria-label="Zoom out"
+            onClick={zoomOut}
+            disabled={!canZoomOut}
+            className="w-10 h-10 rounded-xl bg-background/80 border border-primary/50 text-primary font-bold text-xl flex items-center justify-center active:scale-90 transition-transform disabled:opacity-40"
+          >
+            −
+          </button>
+          {isZoomed && (
+            <button
+              type="button"
+              data-pan-zoom-control
+              aria-label="Reset view"
+              onClick={resetView}
+              className="w-10 h-10 rounded-xl bg-background/80 border border-primary/50 text-primary font-bold text-lg flex items-center justify-center active:scale-90 transition-transform"
+            >
+              ⟳
+            </button>
+          )}
+        </div>
+
+        {/* Scale indicator */}
+        <div className="absolute bottom-2 left-2 z-30 bg-background/70 backdrop-blur rounded-full px-3 py-1 text-[11px] font-bold text-primary border border-primary/30">
+          {Math.round(scale * 100)}%
+        </div>
+
+        {/* Gesture hint */}
+        <div className="absolute bottom-2 right-2 z-30 pointer-events-none bg-background/60 rounded-full px-2 py-1 text-[9px] text-muted-foreground">
+          👆 اسحب للتحريك • 🤏 قرصة للتكبير
+        </div>
       </div>
 
       {/* Instructions */}
-      <div className="bg-background/70 border-2 border-primary/40 rounded-lg p-3 space-y-2 backdrop-blur-sm">
+      <div className="shrink-0 bg-background/70 border-2 border-primary/40 rounded-lg p-3 space-y-2 backdrop-blur-sm">
         <p className="text-xs text-muted-foreground text-center font-bold">📖 كيفية اللعب</p>
         <div className="grid grid-cols-3 gap-2 text-[9px] text-muted-foreground text-center">
           <div className="p-2 bg-primary/10 rounded">

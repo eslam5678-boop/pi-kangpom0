@@ -1,5 +1,6 @@
 import React from "react";
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 
@@ -44,6 +45,12 @@ export default function RootLayout({
         suppressHydrationWarning
         className="min-h-screen bg-background text-white antialiased"
       >
+        {/* سكريبت Pi SDK الرسمي — يُحمَّل قبل أي كود تطبيق حتى يكون window.Pi جاهزًا */}
+        <Script
+          src="https://sdk.minepi.com/pi-sdk.js"
+          strategy="beforeInteractive"
+          onError={(e) => console.warn("[PiSDK] Official pi-sdk.js failed to load", e)}
+        />
         <ErrorBoundary>
           <AppWrapper>{children}</AppWrapper>
         </ErrorBoundary>

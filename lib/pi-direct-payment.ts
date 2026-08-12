@@ -280,20 +280,46 @@ function canUseLegacy(pi: PiSDK | undefined): boolean {
   );
 }
 
+/** مهلة لأي عملية خارجية (مثل SDKLite) كي لا تعلق ضغطة الشراء. */
+function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+/** رابط فتح اللعبة مباشرة داخل Pi Browser (deep link). */
+function getPiDeepLink(): string {
+  if (typeof window === "undefined") return "";
+  return `pi://${window.location.host}${window.location.pathname || "/"}`;
+}
+
 /**
  * Unified payment entry point — call this as the FIRST statement inside your
  * click handler with NO await before it.
  *
- * Authentication already happened at app entry, the uid is cached
- * synchronously, and this function invokes the appropriate Pi API in the SAME
- * user-gesture tick:
+ * Pi.init + Pi.authenticate happen at app entry (see auth-context) in EVERY
+ * environment — the official SDK is never skipped because the app is in an
+ * iframe. Here we only pick the right payment layer in the SAME tick:
  *
- *   1. SDKLite `makePurchase`    → Pi App Studio (product catalog) — ONLY path in App Studio.
- *   2. Legacy `Pi.createPayment` → Pi Browser classic apps — only after a strict
- *      check that the user is authenticated WITH the "payments" scope.
+ *   1. Pi SDK v2 `Pi.createPayment` — أولوية قصوى متى ما كانت الجلسة مصادقة
+ *      وتحتوي consent على صلاحية "payments" (أول سطر صريح).
+ *   2. SDKLite `makePurchase` — مسار منتجات App Studio (فقط لو الـ v2 غير جاهز).
+ *   3. تنبيه محترم برابط pi:// بدل أي خطأ تقني/انهيار.
  *
- * Resolves on server-side completion; rejects with a normalized Error carrying
- * a stable `code` and a clear Arabic user-facing message:
+ * Rejects with a normalized Error carrying a stable `code`:
  *   `purchase_cancelled` | `product_not_found` | `payments_scope_missing`
  *   | `pi_environment_missing` | `pi_payment_unavailable`
  */
@@ -313,42 +339,47 @@ export async function payWithPi(data: PiPaymentData): Promise<PiPaymentResult> {
 
   const sdk = getPiSdk();
   const pi = getWindowPi();
+  const deepLink = getPiDeepLink();
 
   // ------------------------------------------------------------
-  // 0) لا توجد أي وسيلة دفع في هذه البيئة إطلاقًا
+  // 0) لا يوجد أي كائن دفع في هذه البيئة إطلاقًا
   // ------------------------------------------------------------
-  if (!sdk && !pi) {
+  if (!pi && !sdk) {
     throwPiError(
       "pi_payment_unavailable",
-      "الدفع غير متاح في هذه البيئة. افتح اللعبة داخل Pi App Studio أو داخل تطبيق Pi Browser على الموبايل."
+      `لا توجد محفظة باي (window.Pi) في هذه البيئة. افتح اللعبة مباشرة داخل تطبيق Pi Browser عبر:\n${deepLink}`
     );
   }
 
   // ------------------------------------------------------------
-  // 1) App Studio — مسار SDKLite حصرًا (لا نقترب من Pi.createPayment هنا)
-  //    ملاحظة: SDKLite داخليًا بيحتاج window.Pi — لو غير موجود نعرض رسالة واضحة
-  //    بدل انهيار "Pi is not defined".
+  // 1) Pi SDK v2 — Pi.createPayment (أولوية قصوى؛ أول سطر في نفس tick الضغطة)
+  //    شرط صارم: جلسة مصادقة + صلاحية "payments" موجودة فعلًا.
+  // ------------------------------------------------------------
+  if (canUseLegacy(pi)) {
+    return createLegacyPayment(pi as PiSDK, paymentData);
+  }
+
+  // ------------------------------------------------------------
+  // 2) App Studio — SDKLite makePurchase (ثانوي وبحد أقصى 15 ثانية)
   // ------------------------------------------------------------
   if (sdk && data.productSlug) {
-    if (!pi) {
-      throwPiError(
-        "pi_environment_missing",
-        "بيئة App Studio التجريبية الحالية لا توفر نافذة محفظة باي (window.Pi غير موجود). لاختبار الدفع الفعلي افتح التطبيق داخل تطبيق Pi Browser على الموبايل."
-      );
-    }
     try {
-      return await purchaseWithSdklite(sdk, data.productSlug);
+      return await promiseWithTimeout(
+        purchaseWithSdklite(sdk, data.productSlug),
+        15000,
+        "SDKLite.makePurchase"
+      );
     } catch (e) {
       if (/Pi is not defined|is not defined/i.test(String(e))) {
+        // SDKLite داخليًا بيحتاج window.Pi — لو مش متاح نوجّه المستخدم بلطف.
         throwPiError(
           "pi_environment_missing",
-          "بيئة App Studio الحالية لا توفر محفظة باي (window.Pi غير موجود) — افتح اللعبة داخل Pi Browser على الموبايل لاختبار الدفع الفعلي."
+          `لا توجد محفظة باي في بيئة App Studio الحالية — افتح اللعبة مباشرة داخل تطبيق Pi Browser عبر:\n${deepLink}`
         );
       }
       const code = (e as { code?: string })?.code;
       const isMissingProduct =
         (e as { name?: string })?.name === "SDKLiteError" && code === "product_not_found";
-      // الخريف الوحيد هو الـ legacy بشرط وجود session + صلاحية payments — غير كده خطأ واضح.
       if (!isMissingProduct || !canUseLegacy(pi)) {
         throw normalizePiError(e);
       }
@@ -357,43 +388,36 @@ export async function payWithPi(data: PiPaymentData): Promise<PiPaymentResult> {
   }
 
   // ------------------------------------------------------------
-  // 2) Pi Browser — مسار Pi.createPayment مع فحص صارم قبل الاستدعاء
+  // 3) لو الجلسة بقت جاهزة أثناء محاولاتنا — نكمل بالـ v2
   // ------------------------------------------------------------
-  if (pi && typeof pi.createPayment === "function") {
-    if (pi.authenticated !== true) {
-      throwPiError(
-        "payments_scope_missing",
-        "لم يتم تسجيل الدخول إلى باي — داخل المتصفح الخارجي اللعبة شغالة كضيف. افتح اللعبة داخل تطبيق Pi Browser ووافق على صلاحيات الدفع ثم أعد المحاولة."
-      );
-    }
-    if (!Array.isArray(pi.consentedScopes) || !pi.consentedScopes.includes("payments")) {
-      throwPiError(
-        "payments_scope_missing",
-        "لم يتم منح صلاحية الدفع (payments) بعد. وافق على صلاحية الدفع من شاشة باي ثم أعد المحاولة."
-      );
-    }
-    return createLegacyPayment(pi, paymentData);
+  if (canUseLegacy(pi)) {
+    return createLegacyPayment(pi as PiSDK, paymentData);
   }
 
   // ------------------------------------------------------------
-  // 3) أي حالة أخرى
+  // 4) تنبيه محترم (ممنوع استدعاء createPayment بدون صلاحية payments)
   // ------------------------------------------------------------
+  if (pi && typeof pi.createPayment === "function") {
+    throwPiError(
+      "payments_scope_missing",
+      pi.authenticated === true
+        ? `لم يتم منح صلاحية الدفع (payments) بعد. افتح اللعبة مباشرة داخل تطبيق Pi Browser عبر:\n${deepLink}\nووافق على صلاحيات الدفع ثم أعد المحاولة.`
+        : `لم يتم تسجيل الدخول إلى باي (اللعبة شغالة كضيف). افتح اللعبة مباشرة داخل تطبيق Pi Browser عبر:\n${deepLink}\nوسجّل الدخول ثم أعد المحاولة.`
+    );
+  }
+
   const isPiBrowser =
     typeof navigator !== "undefined" &&
     /pi\s*browser|pibrowser/i.test(navigator.userAgent || "");
-  const sdkScriptLoaded = !!document.querySelector(
-    'script[src*="sdk.minepi.com"], script[src*="pi-sdk.js"]'
-  );
-  console.error("[PiPay] No payment method available in this environment.", {
+  console.error("[PiPay] No usable payment method in this environment.", {
     sdkAvailable: !!sdk,
     piAvailable: !!pi,
     createPaymentAvailable: typeof pi?.createPayment,
     isPiBrowser,
-    sdkScriptLoaded,
   });
   throwPiError(
     "pi_payment_unavailable",
-    "لا توجد طريقة دفع متاحة في هذه البيئة — افتح اللعبة داخل Pi App Studio أو Pi Browser."
+    `لا توجد طريقة دفع متاحة في هذه البيئة. افتح اللعبة داخل تطبيق Pi Browser عبر:\n${deepLink}`
   );
 }
 

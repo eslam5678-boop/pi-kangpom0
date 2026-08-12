@@ -336,3 +336,54 @@
 .night-mode .animate-floaty {
   animation: floaty 3s ease-in-out infinite, ambient-glow 4s ease-in-out infinite;
 }
+
+/* ============================================================
+   Responsive Game Field — Pan / Zoom viewport
+   Captures all touch/mouse interactions so only the inner layer
+   is transformed; the surrounding header/nav stay static.
+   ============================================================ */
+.game-field-viewport {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  /* Hand raw pointer/touch events to the JS gesture controller */
+  touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Promotes to its own layer for smooth 60fps transforms */
+  contain: layout style;
+  will-change: transform;
+  cursor: grab;
+}
+
+.game-field-viewport:active {
+  cursor: grabbing;
+}
+
+.game-field-viewport img,
+.game-field-viewport [draggable="true"] {
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: none;
+}
+
+/* The inner layer that gets translated/scaled by JS */
+.pan-zoom-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* Keep tiles tappable inside the transformed layer */
+.pan-zoom-layer button {
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+

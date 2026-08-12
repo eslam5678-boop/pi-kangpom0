@@ -76,9 +76,9 @@ const { products, sdk, user, isLoading, logout } = usePiAuth()
   const timeStr = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div key={componentKey} className="min-h-screen bg-background flex flex-col w-full">
+    <div key={componentKey} className="h-dvh bg-background flex flex-col w-full overflow-hidden">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-card/95 backdrop-blur border-b-2 border-primary/30 w-full">
+      <header className="shrink-0 z-40 bg-card/95 backdrop-blur border-b-2 border-primary/30 w-full">
         <div className="w-full max-w-4xl mx-auto px-4 py-3 space-y-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -234,7 +234,7 @@ const { products, sdk, user, isLoading, logout } = usePiAuth()
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 py-4 pb-28">
+      <main className="flex-1 min-h-0 w-full max-w-4xl mx-auto px-4 pt-4 pb-4 overflow-y-auto">
         {tab === "game" && <IsometricGameGrid />}
         {tab === "tasks" && <DailyTasks />}
         {tab === "assets" && (
@@ -272,7 +272,7 @@ const { products, sdk, user, isLoading, logout } = usePiAuth()
       </main>
 
       {/* Bottom nav */}
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t-2 border-primary/30 w-full">
+      <nav className="shrink-0 z-40 bg-card/95 backdrop-blur border-t-2 border-primary/30 w-full">
         <div className="w-full max-w-4xl mx-auto flex flex-wrap">
           {NAV.map((item) => (
             <button

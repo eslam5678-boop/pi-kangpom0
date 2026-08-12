@@ -357,16 +357,9 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
       // ------------------------------------------------------------
       let legacyAuthOk = false;
       try {
-        if (insideAppStudio) {
-          // داخل App Studio (iframe) لا نحمّل/نستدعي pi-sdk القديم: جسر
-          // postMessage الخاص بـ Pi Browser بيعلق 120 ثانية وبيسبب origin
-          // mismatch. App Studio يوفّر window.Pi الخاص به وSDKLite يتكفل
-          // بالمصادقة والدفع وقت الطلب.
-          pushDiag("تخطي Pi SDK v2 القديم داخل App Studio ✅");
-        } else {
-          setAuthMessage("Loading Pi SDK...");
-          await withTimeout(loadPiSDK(), 8000, "loadPiSDK");
-          setAuthMessage("Initializing Pi Network...");
+        setAuthMessage("Loading Pi SDK...");
+        await withTimeout(loadPiSDK(), 8000, "loadPiSDK");
+        setAuthMessage("Initializing Pi Network...");
         const piInstance = (window as any).Pi;
         console.log("[PiAuth] Pi.init() config:", {
           version: "2.0",
@@ -382,7 +375,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
               sandbox: PI_NETWORK_CONFIG.SANDBOX,
               appId: PI_NETWORK_CONFIG.APP_ID,
             }),
-            8000,
+            10000,
             "Pi.init"
           );
           console.log("[PiAuth] Pi.init() succeeded, appId:", (piInstance as any)?.getAppId?.() ?? "N/A");
@@ -442,7 +435,7 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
             setAuthMessage("Authenticating with Pi Network...");
             const authResult: { accessToken?: string } | undefined = await withTimeout(
               piInstance.authenticate(piScopes, onIncompletePayment) as Promise<{ accessToken?: string }>,
-              8000,
+              30000,
               "Pi.authenticate"
             );
             if (!authResult?.accessToken) {
@@ -480,7 +473,6 @@ const fetchProducts = async (sdkInstance: SDKLiteInstance): Promise<void> => {
             }
           }
         }
-        } // نهاية else — وضع غير iframe
       } catch (legacyErr: any) {
         console.warn("[PiAuth] Legacy Pi v2 init/authenticate failed (non-fatal):", legacyErr);
         pushDiag(`Pi v2 (Pi Browser) فشل ❌: ${legacyErr?.message || String(legacyErr)}`);
